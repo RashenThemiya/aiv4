@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Local customer-facing demo for the BrightGrid Energy support chatbot." />
+    <title>BrightGrid Energy | Chatbot Demo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/demo.css" />
+  </head>
+  <body>
+    <div class="demo-ribbon">Local customer experience demo</div>
+
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="BrightGrid Energy home">
+        <span class="brand-mark" aria-hidden="true">BG</span>
+        <span class="brand-word">BrightGrid <small>Energy</small></span>
+      </a>
+
+      <button class="menu-button" type="button" aria-label="Toggle navigation" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+
+      <nav class="main-nav" aria-label="Main navigation">
+        <a href="#products">Solutions</a>
+        <a href="#products">Home energy</a>
+        <a href="#products">For business</a>
+        <a href="#why-us">Why BrightGrid</a>
+        <a href="#why-us">Energy guides</a>
+        <a href="#why-us">Support</a>
+      </nav>
+
+      <div class="header-actions">
+        <button class="icon-button search-toggle" type="button" aria-label="Search">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
+        </button>
+        <button class="icon-button" type="button" aria-label="Account">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3"></circle><path d="M5 21c.5-4 2.8-6 7-6s6.5 2 7 6"></path></svg>
+        </button>
+        <button class="icon-button cart-button" type="button" aria-label="Shopping cart">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l-1 12H6L5 8Z"></path><path d="M9 9V6a3 3 0 0 1 6 0v3"></path></svg>
+          <span class="cart-count">0</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="search-bar" hidden>
+      <label for="site-search">Search the store</label>
+      <input id="site-search" type="search" placeholder="Try “solar panels”" />
+      <button class="search-close" type="button">Close</button>
+    </div>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Energy made beautifully simple</p>
+          <h1>A brighter way to power what matters.</h1>
+          <p class="hero-description">Build a flexible home-energy system around your needs, with straightforward guidance from planning to everyday use.</p>
+          <div class="hero-actions">
+            <a class="primary-cta" href="#products">Explore energy kits</a>
+            <button class="secondary-cta open-support" type="button">Talk to our assistant</button>
+          </div>
+          <div class="trust-row" aria-label="Store benefits">
+            <span><strong>Flexible</strong> system design</span>
+            <span><strong>Clear</strong> product guidance</span>
+            <span><strong>5-year</strong> support promise</span>
+          </div>
+        </div>
+        <div class="hero-visual" aria-label="Solar energy illustration">
+          <div class="sun"></div>
+          <div class="panel-field panel-field-back"><span></span></div>
+          <div class="panel-field panel-field-front"><span></span></div>
+          <div class="energy-card">
+            <span class="energy-icon">↗</span>
+            <div><strong>Live generation</strong><small>8.4 kWh produced today</small></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="category-strip" aria-label="Product categories">
+        <a href="#products"><span>01</span> Starter systems</a>
+        <a href="#products"><span>02</span> Home storage</a>
+        <a href="#products"><span>03</span> Smart controls</a>
+        <a href="#products"><span>04</span> Expert planning</a>
+      </section>
+
+      <section class="products-section" id="products">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Designed to work together</p>
+            <h2>Meet the BrightGrid range</h2>
+          </div>
+          <a href="#products">See all solutions <span>→</span></a>
+        </div>
+
+        <div class="product-grid">
+          <article class="product-card">
+            <div class="product-badge">Best seller</div>
+            <div class="product-image"><div class="solar-panel panel-black"></div></div>
+            <div class="product-meta"><span>BrightGrid</span><span>HOME SERIES</span></div>
+            <h3>Daylight 460 Smart Solar Module</h3>
+            <div class="product-footer"><strong>$189.00</strong><span>Ready to ship</span></div>
+            <button class="add-cart" type="button">Add to plan</button>
+          </article>
+
+          <article class="product-card">
+            <div class="product-image"><div class="solar-panel panel-grid"></div></div>
+            <div class="product-meta"><span>BrightGrid</span><span>PRO SERIES</span></div>
+            <h3>Horizon 520 High-Output Module</h3>
+            <div class="product-footer"><strong>$229.00</strong><span>Ready to ship</span></div>
+            <button class="add-cart" type="button">Add to plan</button>
+          </article>
+
+          <article class="product-card">
+            <div class="product-badge new">New</div>
+            <div class="product-image"><div class="solar-panel panel-blue"></div></div>
+            <div class="product-meta"><span>BrightGrid</span><span>STORAGE</span></div>
+            <h3>Reserve 10 Home Battery System</h3>
+            <div class="product-footer"><strong>$2,490</strong><span>New release</span></div>
+            <button class="add-cart" type="button">Add to plan</button>
+          </article>
+
+          <article class="product-card">
+            <div class="product-image"><div class="solar-panel panel-black"></div></div>
+            <div class="product-meta"><span>BrightGrid</span><span>CONTROL</span></div>
+            <h3>Flow One Hybrid Energy Controller</h3>
+            <div class="product-footer"><strong>$899.00</strong><span>Ready to ship</span></div>
+            <button class="add-cart" type="button">Add to plan</button>
+          </article>
+        </div>
+      </section>
+
+      <section class="performance" id="why-us">
+        <div class="performance-art" aria-hidden="true">
+          <div class="snow snow-one">✦</div><div class="snow snow-two">✦</div><div class="snow snow-three">✦</div>
+          <div class="cold-panel"><span></span></div>
+        </div>
+        <div class="performance-copy">
+          <p class="eyebrow">One connected ecosystem</p>
+          <h2>Energy that adapts around you.</h2>
+          <p>Start small, expand later, and understand every part of your setup. If you’re unsure where to begin, our support assistant can help you explore the available information.</p>
+          <button class="light-cta open-support" type="button">Find the right setup</button>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <a class="brand footer-brand" href="#top"><span class="brand-mark" aria-hidden="true">BG</span><span class="brand-word">BrightGrid <small>Energy</small></span></a>
+      <p>This storefront is a local demonstration environment for chatbot testing.</p>
+      <button class="setup-link" type="button">Widget setup</button>
+    </footer>
+
+    <dialog class="setup-dialog" aria-labelledby="setup-title">
+      <form class="setup-card" method="dialog">
+        <div class="setup-heading">
+          <div>
+            <p class="eyebrow">Local configuration</p>
+            <h2 id="setup-title">Connect the chatbot</h2>
+          </div>
+          <button class="dialog-close" value="cancel" aria-label="Close setup">×</button>
+        </div>
+        <p>Paste the company details from the admin dashboard. They stay only in this browser and are not added to the project files.</p>
+
+        <label>Backend URL
+          <input name="apiBaseUrl" type="url" value="http://localhost:3000" required />
+        </label>
+        <label>Company ID
+          <input name="companyId" type="text" placeholder="Paste the full company ID" required />
+        </label>
+        <label>Full Widget API Key
+          <input name="apiKey" type="password" placeholder="ragw_..." required autocomplete="off" />
+        </label>
+        <p class="setup-note">The shortened key preview cannot be used. Generate or rotate the key in the admin dashboard if you no longer have the full value.</p>
+        <div class="setup-status" role="status"></div>
+        <div class="setup-actions">
+          <button class="clear-config" type="button">Clear saved values</button>
+          <button class="save-config" type="submit" value="save">Save and load widget</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/src/demo.js"></script>
+  </body>
+</html>

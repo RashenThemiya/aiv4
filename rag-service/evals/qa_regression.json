@@ -1,0 +1,134 @@
+[
+  {
+    "id": "ic1220100_dead_battery",
+    "question": "At what battery voltage will IC1220100 recover from a dead battery?",
+    "expected_model": "IC1220100",
+    "expected_facts": [">3.0V"],
+    "forbidden_facts": ["10.5V"]
+  },
+  {
+    "id": "ic1230150_fuse",
+    "question": "What fuse rating is required for IC1230150?",
+    "expected_model": "IC1230150",
+    "expected_facts": ["450A"],
+    "forbidden_facts": ["300A"]
+  },
+  {
+    "id": "ic122055i_charger",
+    "question": "What charging current does IC122055I provide?",
+    "expected_model": "IC122055I",
+    "expected_facts": ["55A"],
+    "forbidden_facts": ["100A"]
+  },
+  {
+    "id": "ic121040_e05",
+    "question": "What does error E05 mean on IC121040?",
+    "expected_model": "IC121040",
+    "expected_facts": ["low battery voltage"],
+    "forbidden_facts": ["short-circuit protection"]
+  },
+  {
+    "id": "suresine_topic_switch",
+    "question": "What is the SureSine inverter?",
+    "history": [
+      "user: Where are the mounting holes on IC244090i?",
+      "assistant: Check the technical drawing."
+    ],
+    "expected_facts": ["pure sine wave"],
+    "forbidden_facts": ["mounting holes", "IC244090i"]
+  },
+  {
+    "id": "suresine_continuous_power",
+    "question": "What is the continuous power rating of the SureSine?",
+    "history": [
+      "user: What is the SureSine inverter?",
+      "assistant: The SureSine is a pure sine wave inverter."
+    ],
+    "expected_facts": ["300W"],
+    "forbidden_facts": []
+  },
+  {
+    "id": "suresine_ac_versions",
+    "question": "What AC output versions are available?",
+    "history": [
+      "user: What is the SureSine inverter?",
+      "assistant: The SureSine is a pure sine wave inverter."
+    ],
+    "expected_facts": ["115V", "60Hz", "220V", "50Hz"],
+    "forbidden_facts": []
+  },
+  {
+    "id": "suresine_temperature_followup_after_fallbacks",
+    "question": "What is the operating temperature range?",
+    "history": [
+      "user: What is the SureSine inverter?",
+      "assistant: The SureSine is a pure sine wave inverter.",
+      "user: What AC output versions are available?",
+      "assistant: I couldn't confirm the exact value.",
+      "user: Can you check that again?",
+      "assistant: I still couldn't confirm the exact value."
+    ],
+    "preferred_product_names": ["suresine"],
+    "expected_facts": ["-40", "+45"],
+    "forbidden_facts": ["+60", "T4", "T5"],
+    "forbidden_sources": ["operation-manual-.pdf"]
+  },
+  {
+    "id": "ic244090i_mounting_drawing",
+    "question": "I am preparing to install my IC244090i inverter on a custom mounting board. Where are the mounting holes located on this specific unit?",
+    "expected_model": "IC244090i",
+    "expected_facts": ["four mounting holes", "top left corner", "bottom right corner"],
+    "forbidden_facts": []
+  },
+  {
+    "id": "ac1240_shared_silent_mode",
+    "question": "I sleep near my AC1240 Abso Charger and the cooling fan is too loud at night. Is there a way to mute it?",
+    "expected_source": "Abso-AC-Charger-REV-C.pdf",
+    "expected_facts": ["Silent Mode", "SET", "3 seconds", "12 hours"],
+    "forbidden_facts": ["couldn't find enough", "60A"]
+  },
+  {
+    "id": "sunsaver_models_keep_display_format",
+    "question": "What SunSaver models are available?",
+    "expected_source": "operation-manual-.pdf",
+    "expected_facts": ["SS-6-12V", "SS-10L-24V", "SS-20L-24V"],
+    "forbidden_facts": ["SS1012V", "SS20L24V"],
+    "forbidden_sources": ["manual (1).pdf", "datasheet-.pdf"]
+  },
+  {
+    "id": "sunsaver_followup_system_voltages",
+    "question": "What system voltages are supported?",
+    "history": [
+      "user: What are Morningstar SunSaver PV system solar controllers?",
+      "assistant: SunSaver is a family of PWM solar charge controllers."
+    ],
+    "expected_source": "operation-manual-.pdf",
+    "expected_facts": ["12V", "24V"],
+    "forbidden_facts": ["115V", "220V", "SI300"],
+    "forbidden_sources": ["manual (1).pdf", "datasheet-.pdf"]
+  },
+  {
+    "id": "sunsaver_followup_self_consumption",
+    "question": "What is the controller self-consumption?",
+    "history": [
+      "user: What are Morningstar SunSaver PV system solar controllers?",
+      "assistant: SunSaver is a family of PWM solar charge controllers."
+    ],
+    "expected_source": "operation-manual-.pdf",
+    "expected_facts": ["<8mA"],
+    "forbidden_facts": ["25mA", "450mA"],
+    "forbidden_sources": ["manual (1).pdf", "datasheet-.pdf"]
+  },
+  {
+    "id": "sunsaver_followup_lvd",
+    "question": "What is the purpose of low-voltage load disconnect on L models?",
+    "history": [
+      "user: What are Morningstar SunSaver PV system solar controllers?",
+      "assistant: SunSaver is a family of PWM solar charge controllers."
+    ],
+    "expected_source": "operation-manual-.pdf",
+    "expected_facts": ["protect", "battery", "discharge"],
+    "forbidden_facts": [],
+    "forbidden_sources": ["manual (1).pdf", "datasheet-.pdf"]
+  }
+]

@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Environment
+.env
+.env.local
+
+# Deployment secrets
+.env.*
+!.env.example
+!.env.server.example
+*.pem
+*.key
+
+# Uploads & data
+backend/uploads/
+rag-service/chroma_data/
+rag-service/temp/
+
+# IDE & OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
