@@ -62,7 +62,6 @@ jobs:
   deploy:
     name: Pull images and restart server
     needs: build-and-push
-    if: vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
