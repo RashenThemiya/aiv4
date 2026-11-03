@@ -32,6 +32,12 @@ function friendlyErrorMessage({ status = 0, data = {}, path = "", cause = null }
   if (status === 413 || technical.includes("file too large")) {
     return "This file is too large. Choose a PDF smaller than 20 MB and try again.";
   }
+  if (technical.includes("monthly ai usage allowance")) {
+    return "This business has reached its monthly AI allowance. Ask the account administrator to increase the limit.";
+  }
+  if (status === 402 || technical.includes("prepaid ai credit balance")) {
+    return "This business has no available AI credits. Ask the account administrator to add a credit package.";
+  }
   if (status === 429 || technical.includes("rate limit") || technical.includes("quota")) {
     return "The AI service is temporarily busy or has reached its usage limit. Please wait a few minutes and try again.";
   }
@@ -213,6 +219,15 @@ export const api = {
       request(`/api/companies/${id}/widget-api-key`, {
         method: "POST",
       }),
+    tokenUsage: (id) => request(`/api/companies/${id}/token-usage`),
+    creditTransactions: (id, page = 1) =>
+      request(`/api/companies/${id}/credits/transactions?page=${page}&limit=50`),
+    addCredits: (id, payload) =>
+      request(`/api/companies/${id}/credits`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }),
     remove: (id) => request(`/api/companies/${id}`, { method: "DELETE" }),
   },
   whatsappIntegration: {
@@ -385,6 +400,12 @@ export const api = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId }),
+      }),
+    reportRealtimeUsage: (companyId, responseId, usage) =>
+      request(`/api/companies/${companyId}/chat/realtime/usage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ responseId, usage }),
       }),
   },
 };

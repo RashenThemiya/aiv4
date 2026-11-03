@@ -1,8 +1,5 @@
 # Pentarix AI Assistant
 
-For GitHub Actions builds and Docker deployment to the server, see
-[Docker deployment setup](docs/07-docker-deployment.md).
-
 A multi-company RAG (Retrieval-Augmented Generation) customer support system. Each company uploads PDF knowledge-base documents, and customers can ask questions through web chat, WhatsApp, or SMS. Answers are grounded only in the selected company's documents.
 
 ## Current features

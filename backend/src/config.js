@@ -54,6 +54,24 @@ config.validateForStartup = function validateForStartup() {
   if (!process.env.JWT_SECRET || config.jwtSecret === "change-this-dev-secret") missing.push("JWT_SECRET");
   if (!process.env.SUPER_ADMIN_PASSWORD || config.superAdminPassword === "admin123") missing.push("SUPER_ADMIN_PASSWORD");
   if (!config.ragServiceApiKey) missing.push("RAG_SERVICE_API_KEY");
+  const metaEnabled = Boolean(
+    config.metaAppId
+    || config.metaAppSecret
+    || config.whatsappEmbeddedSignupConfigId
+    || config.messengerLoginConfigId
+  );
+  if (metaEnabled) {
+    if (!config.metaAppId) missing.push("META_APP_ID");
+    if (!config.metaAppSecret) missing.push("META_APP_SECRET");
+    if (!config.whatsappVerifyToken) missing.push("WHATSAPP_VERIFY_TOKEN");
+    if (!config.whatsappTokenEncryptionKey) missing.push("WHATSAPP_TOKEN_ENCRYPTION_KEY");
+    if (!config.messengerVerifyToken) missing.push("MESSENGER_VERIFY_TOKEN");
+    if (!config.messengerTokenEncryptionKey) missing.push("MESSENGER_TOKEN_ENCRYPTION_KEY");
+    if (!config.publicBackendUrl) missing.push("PUBLIC_BACKEND_URL");
+    if (config.publicBackendUrl && !/^https:\/\//i.test(config.publicBackendUrl)) {
+      missing.push("PUBLIC_BACKEND_URL (must use HTTPS)");
+    }
+  }
   if (missing.length) {
     throw new Error(`Missing secure production configuration: ${missing.join(", ")}`);
   }

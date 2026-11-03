@@ -230,11 +230,12 @@ function ProductManagement({ companyId }) {
   );
 }
 
-function OrderManagement({ companyId, companyName }) {
+function OrderManagement({ companyId, company }) {
   const [orders, setOrders] = useState([]);
   const [summary, setSummary] = useState(null);
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
+  const [selectedOrderIds, setSelectedOrderIds] = useState(() => new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -246,7 +247,10 @@ function OrderManagement({ companyId, companyName }) {
         api.orders.list(companyId, { status, search }),
         api.orders.summary(companyId),
       ]);
-      setOrders(orderResult.orders || []);
+      const nextOrders = orderResult.orders || [];
+      setOrders(nextOrders);
+      const visibleIds = new Set(nextOrders.map((order) => order._id));
+      setSelectedOrderIds((current) => new Set([...current].filter((id) => visibleIds.has(id))));
       setSummary(summaryResult);
     } catch (err) {
       setError(err.message);
@@ -264,6 +268,25 @@ function OrderManagement({ companyId, companyName }) {
     } catch (err) {
       setError(err.message);
     }
+  }
+
+  const selectedOrders = orders.filter((order) => selectedOrderIds.has(order._id));
+
+  function toggleOrderSelection(orderId) {
+    setSelectedOrderIds((current) => {
+      const next = new Set(current);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
+      return next;
+    });
+  }
+
+  function toggleAllVisibleOrders() {
+    setSelectedOrderIds((current) => {
+      const allVisibleSelected = orders.length > 0 && orders.every((order) => current.has(order._id));
+      if (allVisibleSelected) return new Set();
+      return new Set(orders.map((order) => order._id));
+    });
   }
 
   function printBill(order) {
@@ -323,7 +346,7 @@ function OrderManagement({ companyId, companyName }) {
         </head>
         <body>
           <header class="header">
-            <div><div class="brand">${escapeHtml(companyName || "Pentarix AI Assistant")}</div><h1>Order Bill</h1></div>
+            <div><div class="brand">${escapeHtml(company?.name || "Pentarix AI Assistant")}</div><h1>Order Bill</h1></div>
             <div class="bill-title"><strong>${escapeHtml(order.orderNumber)}</strong><span class="muted">${escapeHtml(createdAt)}</span></div>
           </header>
           <section class="grid">
@@ -356,6 +379,178 @@ function OrderManagement({ companyId, companyName }) {
     window.setTimeout(() => printWindow.print(), 250);
   }
 
+  function printSelectedBills() {
+    if (!selectedOrders.length) return;
+    const printWindow = window.open("", "_blank", "width=1000,height=820");
+    if (!printWindow) {
+      setError("Your browser blocked the print window. Allow pop-ups for this dashboard and try again.");
+      return;
+    }
+    printWindow.opener = null;
+    const pages = selectedOrders.map((order) => {
+      const confirmedPrice = order.priceStatus !== "pending";
+      const currency = order.currency || "LKR";
+      const rows = (order.items || []).map((item) => `
+        <tr><td><strong>${escapeHtml(item.name || "Item")}</strong>${item.variant ? `<div class="muted">Option: ${escapeHtml(item.variant)}</div>` : ""}${item.sku ? `<div class="muted">SKU: ${escapeHtml(item.sku)}</div>` : ""}</td><td class="number">${escapeHtml(item.quantity)}</td><td class="number">${confirmedPrice ? escapeHtml(money(item.unitPrice, currency)) : "Pending"}</td><td class="number">${confirmedPrice ? escapeHtml(money(item.lineTotal, currency)) : "Pending"}</td></tr>
+      `).join("");
+      const totalLabel = confirmedPrice ? money(order.total, currency) : "Seller to confirm";
+      const createdAt = order.createdAt
+        ? new Date(order.createdAt).toLocaleString("en-LK", { dateStyle: "medium", timeStyle: "short" })
+        : "-";
+      return `<article class="bill-page">
+        <header class="header"><div><div class="brand">${escapeHtml(company?.name || "Business")}</div><h1>Order Bill</h1></div><div class="bill-title"><strong>${escapeHtml(order.orderNumber)}</strong><span class="muted">${escapeHtml(createdAt)}</span></div></header>
+        <section class="grid"><div><h2>Bill to</h2><p><strong>${escapeHtml(order.customer?.name || "-")}</strong></p><p>${escapeHtml(order.customer?.phone || "No phone number")}</p><p>${escapeHtml(order.customer?.deliveryAddress || "No delivery address")}</p></div><div><h2>Order details</h2><p>Payment: <strong>${escapeHtml(order.paymentMethod || "-")}</strong></p><p>Channel: ${escapeHtml(order.channel || "-")} / ${escapeHtml((order.language || "").toUpperCase())}</p><p>Status: <span class="status">${escapeHtml(order.status || "new")}</span></p></div></section>
+        <table><thead><tr><th>Item</th><th class="number">Qty</th><th class="number">Unit price</th><th class="number">Amount</th></tr></thead><tbody>${rows || '<tr><td colspan="4">No items</td></tr>'}</tbody></table>
+        <section class="summary">${confirmedPrice ? `<div><span>Subtotal</span><strong>${escapeHtml(money(order.subtotal, currency))}</strong></div><div><span>Delivery</span><strong>${escapeHtml(money(order.deliveryFee, currency))}</strong></div>` : ""}<div class="total"><span>Total</span><span>${escapeHtml(totalLabel)}</span></div></section>
+        <footer class="footer">Generated by Pentarix AI Assistant</footer>
+      </article>`;
+    }).join("");
+    printWindow.document.write(`<!doctype html><html lang="en"><head><meta charset="utf-8" /><title>Selected order bills</title><style>
+      @page { size: A4; margin: 16mm; } * { box-sizing: border-box; } body { margin: 0; color: #0f172a; font: 14px/1.5 Arial, sans-serif; }
+      .bill-page { min-height: 260mm; break-after: page; page-break-after: always; position: relative; padding-bottom: 28px; } .bill-page:last-child { break-after: auto; page-break-after: auto; }
+      .header { display: flex; justify-content: space-between; gap: 24px; padding-bottom: 22px; border-bottom: 2px solid #0f766e; } .brand { color: #0f766e; font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; } h1 { margin: 5px 0 0; font-size: 27px; } .bill-title { text-align: right; } .bill-title strong { display: block; font-size: 18px; } .muted { color: #64748b; font-size: 12px; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin: 26px 0; } h2 { margin: 0 0 8px; color: #475569; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; } p { margin: 3px 0; } table { width: 100%; border-collapse: collapse; } th { padding: 10px; background: #f1f5f9; color: #475569; font-size: 11px; text-align: left; text-transform: uppercase; } td { padding: 12px 10px; border-bottom: 1px solid #e2e8f0; vertical-align: top; } .number { text-align: right; white-space: nowrap; }
+      .summary { width: 330px; margin: 24px 0 0 auto; } .summary div { display: flex; justify-content: space-between; gap: 20px; padding: 5px 0; } .summary .total { margin-top: 8px; padding-top: 12px; border-top: 2px solid #0f172a; font-size: 18px; font-weight: 700; } .status { display: inline-block; padding: 3px 9px; border-radius: 999px; background: #ecfdf5; color: #047857; font-size: 11px; font-weight: 700; text-transform: uppercase; } .footer { position: absolute; right: 0; bottom: 0; left: 0; padding-top: 10px; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 10px; text-align: center; }
+      @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+    </style></head><body>${pages}</body></html>`);
+    printWindow.document.close();
+    printWindow.focus();
+    window.setTimeout(() => printWindow.print(), 250);
+  }
+
+  function printShippingLabel(order) {
+    const printWindow = window.open("", "_blank", "width=620,height=820");
+    if (!printWindow) {
+      setError("Your browser blocked the print window. Allow pop-ups for this dashboard and try again.");
+      return;
+    }
+    printWindow.opener = null;
+    const multiline = (value, fallback = "-") => escapeHtml(value || fallback).replace(/\r?\n/g, "<br>");
+    const sender = company?.shippingDetails || {};
+    const senderName = sender.senderName || company?.name || "Seller";
+    const itemCount = (order.items || []).reduce(
+      (total, item) => total + Number(item.quantity || 0),
+      0
+    );
+    const orderItems = order.items || [];
+    const itemLines = orderItems.slice(0, 4).map((item) => `
+      <li><strong>${escapeHtml(item.quantity)} &times; ${escapeHtml(item.name || "Item")}</strong>${item.variant ? ` — ${escapeHtml(item.variant)}` : ""}</li>
+    `).join("") + (orderItems.length > 4 ? `<li>+ ${orderItems.length - 4} more product line${orderItems.length - 4 === 1 ? "" : "s"}</li>` : "");
+    const payment = String(order.paymentMethod || "-");
+    const isCashOnDelivery = /cash\s*on\s*delivery|\bcod\b/i.test(payment);
+    const confirmedPrice = order.priceStatus !== "pending";
+    const amount = confirmedPrice
+      ? money(order.total, order.currency || "LKR")
+      : "Seller to confirm";
+    const createdAt = order.createdAt
+      ? new Date(order.createdAt).toLocaleDateString("en-LK", { dateStyle: "medium" })
+      : "-";
+
+    printWindow.document.write(`<!doctype html>
+      <html lang="en">
+        <head>
+          <meta charset="utf-8" />
+          <title>${escapeHtml(order.orderNumber)} - Shipping label</title>
+          <style>
+            @page { size: 4in 6in; margin: 0; }
+            * { box-sizing: border-box; }
+            body { width: 4in; min-height: 6in; margin: 0; padding: 5mm; color: #000; font: 12px/1.35 Arial, sans-serif; }
+            .label { display: flex; min-height: calc(6in - 10mm); flex-direction: column; overflow: hidden; border: 2px solid #000; }
+            .top { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 2px solid #000; }
+            .brand { font-size: 15px; font-weight: 900; }
+            .subline { margin-top: 1px; color: #444; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+            .order { font-size: 14px; font-weight: 800; text-align: right; }
+            .date { font-size: 10px; text-align: right; }
+            .block { padding: 9px 10px; border-bottom: 2px solid #000; }
+            .heading { margin-bottom: 4px; font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+            .name { font-size: 16px; font-weight: 800; }
+            .to .name { font-size: 20px; }
+            .address { margin-top: 4px; font-size: 14px; font-weight: 600; white-space: normal; }
+            .phone { margin-top: 5px; font-size: 14px; font-weight: 800; }
+            .payment { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; }
+            .cod { padding: 7px 8px; border: 2px solid #000; font-size: 15px; font-weight: 900; text-align: center; }
+            ul { margin: 5px 0 0; padding-left: 17px; }
+            li { margin: 2px 0; }
+            .footer { margin-top: auto; padding: 6px 10px; font-size: 9px; text-align: center; }
+            .powered { display: block; margin-top: 2px; color: #777; font-size: 7px; letter-spacing: .05em; }
+            @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+          </style>
+        </head>
+        <body>
+          <main class="label">
+            <header class="top">
+              <div><div class="brand">${escapeHtml(company?.name || senderName)}</div><div class="subline">Parcel delivery</div></div>
+              <div><div class="order">${escapeHtml(order.orderNumber)}</div><div class="date">${escapeHtml(createdAt)}</div></div>
+            </header>
+            <section class="block">
+              <div class="heading">From</div>
+              <div class="name">${escapeHtml(senderName)}</div>
+              <div>${multiline(sender.address, "Sender address not configured")}</div>
+              <div class="phone">${escapeHtml(sender.phone || "Sender phone not configured")}</div>
+            </section>
+            <section class="block to">
+              <div class="heading">To</div>
+              <div class="name">${escapeHtml(order.customer?.name || "Customer")}</div>
+              <div class="address">${multiline(order.customer?.deliveryAddress, "No delivery address")}</div>
+              <div class="phone">TEL: ${escapeHtml(order.customer?.phone || "No phone number")}</div>
+            </section>
+            <section class="block payment">
+              <div><div class="heading">Payment</div><strong>${escapeHtml(payment)}</strong></div>
+              <div class="cod">${isCashOnDelivery ? `COD<br>${escapeHtml(amount)}` : escapeHtml(amount)}</div>
+            </section>
+            <section class="block">
+              <div class="heading">Contents — ${escapeHtml(itemCount)} item${itemCount === 1 ? "" : "s"}</div>
+              <ul>${itemLines || "<li>No items recorded</li>"}</ul>
+            </section>
+            <footer class="footer">Handle with care · Order ${escapeHtml(order.orderNumber)}<span class="powered">Powered by Pentarix AI Assistant</span></footer>
+          </main>
+        </body>
+      </html>`);
+    printWindow.document.close();
+    printWindow.focus();
+    window.setTimeout(() => printWindow.print(), 250);
+  }
+
+  function printSelectedShippingLabels() {
+    if (!selectedOrders.length) return;
+    const printWindow = window.open("", "_blank", "width=700,height=860");
+    if (!printWindow) {
+      setError("Your browser blocked the print window. Allow pop-ups for this dashboard and try again.");
+      return;
+    }
+    printWindow.opener = null;
+    const sender = company?.shippingDetails || {};
+    const senderName = sender.senderName || company?.name || "Seller";
+    const multiline = (value, fallback = "-") => escapeHtml(value || fallback).replace(/\r?\n/g, "<br>");
+    const labels = selectedOrders.map((order) => {
+      const itemCount = (order.items || []).reduce((total, item) => total + Number(item.quantity || 0), 0);
+      const orderItems = order.items || [];
+      const itemLines = orderItems.slice(0, 4).map((item) => `<li><strong>${escapeHtml(item.quantity)} &times; ${escapeHtml(item.name || "Item")}</strong>${item.variant ? ` — ${escapeHtml(item.variant)}` : ""}</li>`).join("") + (orderItems.length > 4 ? `<li>+ ${orderItems.length - 4} more product line${orderItems.length - 4 === 1 ? "" : "s"}</li>` : "");
+      const payment = String(order.paymentMethod || "-");
+      const isCashOnDelivery = /cash\s*on\s*delivery|\bcod\b/i.test(payment);
+      const amount = order.priceStatus !== "pending" ? money(order.total, order.currency || "LKR") : "Seller to confirm";
+      const createdAt = order.createdAt ? new Date(order.createdAt).toLocaleDateString("en-LK", { dateStyle: "medium" }) : "-";
+      return `<article class="sheet"><main class="label">
+        <header class="top"><div><div class="brand">${escapeHtml(company?.name || senderName)}</div><div class="subline">Parcel delivery</div></div><div><div class="order">${escapeHtml(order.orderNumber)}</div><div class="date">${escapeHtml(createdAt)}</div></div></header>
+        <section class="block"><div class="heading">From</div><div class="name">${escapeHtml(senderName)}</div><div>${multiline(sender.address, "Sender address not configured")}</div><div class="phone">${escapeHtml(sender.phone || "Sender phone not configured")}</div></section>
+        <section class="block to"><div class="heading">To</div><div class="name">${escapeHtml(order.customer?.name || "Customer")}</div><div class="address">${multiline(order.customer?.deliveryAddress, "No delivery address")}</div><div class="phone">TEL: ${escapeHtml(order.customer?.phone || "No phone number")}</div></section>
+        <section class="block payment"><div><div class="heading">Payment</div><strong>${escapeHtml(payment)}</strong></div><div class="cod">${isCashOnDelivery ? `COD<br>${escapeHtml(amount)}` : escapeHtml(amount)}</div></section>
+        <section class="block"><div class="heading">Contents — ${escapeHtml(itemCount)} item${itemCount === 1 ? "" : "s"}</div><ul>${itemLines || "<li>No items recorded</li>"}</ul></section>
+        <footer class="footer">Handle with care · Order ${escapeHtml(order.orderNumber)}<span class="powered">Powered by Pentarix AI Assistant</span></footer>
+      </main></article>`;
+    }).join("");
+    printWindow.document.write(`<!doctype html><html lang="en"><head><meta charset="utf-8" /><title>Selected shipping labels</title><style>
+      @page { size: 4in 6in; margin: 0; } * { box-sizing: border-box; } body { margin: 0; color: #000; font: 12px/1.35 Arial, sans-serif; }
+      .sheet { width: 4in; height: 6in; padding: 5mm; break-after: page; page-break-after: always; } .sheet:last-child { break-after: auto; page-break-after: auto; }
+      .label { display: flex; min-height: calc(6in - 10mm); flex-direction: column; overflow: hidden; border: 2px solid #000; } .top { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 2px solid #000; } .brand { font-size: 15px; font-weight: 900; } .subline { margin-top: 1px; color: #444; font-size: 9px; letter-spacing: .08em; text-transform: uppercase; } .order { font-size: 14px; font-weight: 800; text-align: right; } .date { font-size: 10px; text-align: right; }
+      .block { padding: 9px 10px; border-bottom: 2px solid #000; } .heading { margin-bottom: 4px; font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; } .name { font-size: 16px; font-weight: 800; } .to .name { font-size: 20px; } .address { margin-top: 4px; font-size: 14px; font-weight: 600; } .phone { margin-top: 5px; font-size: 14px; font-weight: 800; } .payment { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; } .cod { padding: 7px 8px; border: 2px solid #000; font-size: 15px; font-weight: 900; text-align: center; } ul { margin: 5px 0 0; padding-left: 17px; } li { margin: 2px 0; } .footer { margin-top: auto; padding: 6px 10px; font-size: 9px; text-align: center; } .powered { display: block; margin-top: 2px; color: #777; font-size: 7px; letter-spacing: .05em; }
+      @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+    </style></head><body>${labels}</body></html>`);
+    printWindow.document.close();
+    printWindow.focus();
+    window.setTimeout(() => printWindow.print(), 250);
+  }
+
   const statuses = ["new", "confirmed", "processing", "shipped", "delivered", "cancelled"];
   return (
     <div className="space-y-5">
@@ -372,19 +567,30 @@ function OrderManagement({ companyId, companyName }) {
           <Field label="Status"><select className="h-10 rounded-md border border-slate-200 px-3 text-sm" value={status} onChange={(e) => setStatus(e.target.value)}><option value="">All statuses</option>{statuses.map((item) => <option key={item} value={item}>{item}</option>)}</select></Field>
           <SecondaryButton onClick={load} disabled={loading}><RefreshCcw size={16} /> Search</SecondaryButton>
         </div>
+        <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm font-semibold text-slate-700">
+            {selectedOrders.length ? `${selectedOrders.length} order${selectedOrders.length === 1 ? "" : "s"} selected` : "Select orders to print together"}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <SecondaryButton type="button" onClick={printSelectedBills} disabled={!selectedOrders.length}><Printer size={15} /> Print selected bills</SecondaryButton>
+            <PrimaryButton type="button" onClick={printSelectedShippingLabels} disabled={!selectedOrders.length}><Printer size={15} /> Print selected labels</PrimaryButton>
+            {selectedOrders.length > 0 && <SecondaryButton type="button" onClick={() => setSelectedOrderIds(new Set())}>Clear</SecondaryButton>}
+          </div>
+        </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr><th className="px-4 py-3">Order</th><th className="px-4 py-3">Customer</th><th className="px-4 py-3">Items</th><th className="px-4 py-3">Total</th><th className="px-4 py-3">Channel</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Bill</th></tr></thead>
+            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr><th className="w-10 px-4 py-3"><input type="checkbox" aria-label="Select all visible orders" checked={orders.length > 0 && orders.every((order) => selectedOrderIds.has(order._id))} onChange={toggleAllVisibleOrders} /></th><th className="px-4 py-3">Order</th><th className="px-4 py-3">Customer</th><th className="px-4 py-3">Items</th><th className="px-4 py-3">Total</th><th className="px-4 py-3">Channel</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Print</th></tr></thead>
             <tbody className="divide-y divide-slate-100">
               {orders.map((order) => (
                 <tr key={order._id} className={order.status === "new" ? "bg-amber-50/60" : ""}>
+                  <td className="px-4 py-4 align-top"><input type="checkbox" aria-label={`Select order ${order.orderNumber}`} checked={selectedOrderIds.has(order._id)} onChange={() => toggleOrderSelection(order._id)} /></td>
                   <td className="px-4 py-4"><div className="font-semibold">{order.orderNumber}</div><div className="text-xs text-slate-500">{formatDate(order.createdAt)}</div></td>
                   <td className="px-4 py-4"><div>{order.customer?.name}</div><div className="text-xs text-slate-500">{order.customer?.phone || "No phone"}</div><div className="max-w-56 truncate text-xs text-slate-400">{order.customer?.deliveryAddress}</div></td>
                   <td className="px-4 py-4">{order.items?.map((item, index) => <div key={`${item.productId || item.name}-${item.variant}-${index}`}>{item.quantity} × {item.name}{item.variant ? ` (${item.variant})` : ""}</div>)}</td>
                   <td className="px-4 py-4 font-semibold">{order.priceStatus === "pending" ? "Seller to confirm" : `${order.currency} ${Number(order.total).toFixed(2)}`}<div className="text-xs font-normal text-slate-500">{order.paymentMethod}</div></td>
                   <td className="px-4 py-4 capitalize">{order.channel}<div className="text-xs uppercase text-slate-400">{order.language}</div></td>
                   <td className="px-4 py-4"><select className="h-9 rounded-md border border-slate-200 bg-white px-2" value={order.status} onChange={(e) => setOrderStatus(order._id, e.target.value)}>{statuses.map((item) => <option key={item} value={item}>{item}</option>)}</select></td>
-                  <td className="px-4 py-4 text-right"><SecondaryButton type="button" onClick={() => printBill(order)}><Printer size={15} /> Print bill</SecondaryButton></td>
+                  <td className="px-4 py-4"><div className="flex min-w-max flex-col items-stretch gap-2"><SecondaryButton type="button" onClick={() => printBill(order)}><Printer size={15} /> Bill</SecondaryButton><SecondaryButton type="button" onClick={() => printShippingLabel(order)}><Printer size={15} /> Shipping label</SecondaryButton></div></td>
                 </tr>
               ))}
             </tbody>
@@ -553,10 +759,10 @@ function MessengerManagement({ companyId }) {
   );
 }
 
-export function CommercePanel({ companyId, companyName, section }) {
+export function CommercePanel({ companyId, company, section }) {
   if (!companyId) return null;
   if (section === "products") return <ProductManagement companyId={companyId} />;
-  if (section === "orders") return <OrderManagement companyId={companyId} companyName={companyName} />;
+  if (section === "orders") return <OrderManagement companyId={companyId} company={company} />;
   if (section === "messenger") return <MessengerManagement companyId={companyId} />;
   return null;
 }

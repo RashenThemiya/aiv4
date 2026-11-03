@@ -1,4 +1,11 @@
-export const emptyCompanyForm = { name: "", slug: "", description: "" };
+export const emptyCompanyForm = {
+  name: "",
+  slug: "",
+  description: "",
+  senderName: "",
+  senderPhone: "",
+  senderAddress: "",
+};
 
 export const emptyWhatsAppForm = {
   phoneNumberId: "",
@@ -25,6 +32,10 @@ export const emptyAdminForm = {
 
 export const widgetEmbedModeOptions = [
   {
+    value: "guest",
+    label: "Guest Access (Recommended)",
+  },
+  {
     value: "all",
     label: "All Login Options",
   },
@@ -35,10 +46,6 @@ export const widgetEmbedModeOptions = [
   {
     value: "google",
     label: "Google Auth Login Only",
-  },
-  {
-    value: "guest",
-    label: "Without Login Only",
   },
 ];
 

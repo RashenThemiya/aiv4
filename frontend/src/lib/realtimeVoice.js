@@ -28,6 +28,7 @@ export async function createRealtimeVoice({
   onInputTranscriptDelta = () => {},
   onOutputTranscriptDelta = () => {},
   onUnclearTranscript = () => {},
+  onUsage = () => {},
   onError = () => {},
 }) {
   if (!navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection) {
@@ -122,6 +123,9 @@ export async function createRealtimeVoice({
     }
     if (event.type === "response.done") {
       activeResponse = false;
+      if (event.response?.id && event.response?.usage?.total_tokens) {
+        onUsage(event.response.id, event.response.usage);
+      }
       onStateChange(muted ? "muted" : "listening");
       return;
     }

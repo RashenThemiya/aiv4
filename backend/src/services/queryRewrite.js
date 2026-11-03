@@ -1,5 +1,6 @@
 const axios = require("axios");
 const config = require("../config");
+const { recordTokenUsage } = require("./tokenUsage");
 
 const REWRITE_TIMEOUT_MS = 15000;
 const isDev = process.env.NODE_ENV !== "production";
@@ -80,7 +81,7 @@ function parseAnalyzeResponse(content, original) {
   }
 }
 
-async function analyzeUserMessage(message, { responseLanguage = "" } = {}) {
+async function analyzeUserMessage(message, { responseLanguage = "", companyId = "" } = {}) {
   const original = String(message || "").trim();
   if (!original) {
     return { intent: "support_question", reply: null, correctedQuestion: original };
@@ -116,6 +117,7 @@ async function analyzeUserMessage(message, { responseLanguage = "" } = {}) {
     );
 
     const content = data?.choices?.[0]?.message?.content?.trim();
+    await recordTokenUsage(companyId, data?.usage, "preprocessing");
     return parseAnalyzeResponse(content, original);
   } catch (err) {
     logAnalyze(

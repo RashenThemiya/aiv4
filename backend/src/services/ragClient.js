@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const { pipeline } = require("stream/promises");
 const config = require("../config");
+const { assertTokenAllowance, recordTokenUsage } = require("./tokenUsage");
 
 const client = axios.create({
   baseURL: config.ragServiceUrl,
@@ -160,6 +161,7 @@ async function ingestDocument({
   effectiveDate,
   isActive,
 }) {
+  await assertTokenAllowance(companyId);
   const payload = {
     company_id: companyId,
     document_id: documentId,
@@ -174,6 +176,7 @@ async function ingestDocument({
   for (let attempt = 1; attempt <= ingestMaxAttempts; attempt += 1) {
     try {
       const { data } = await client.post("/ingest", payload);
+      await recordTokenUsage(companyId, data?.usage, "ingestion");
       invalidateCompanyCache(companyId);
       return data;
     } catch (error) {
@@ -234,12 +237,15 @@ async function queryKnowledge({
   if (cached && cached.expiresAt > Date.now()) {
     return {
       ...cached.data,
+      usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
       diagnostics: {
         ...(cached.data.diagnostics || {}),
         cache: { hit: true, ttlMs: queryCacheTtlMs },
       },
     };
   }
+
+  await assertTokenAllowance(companyId);
 
   const { data } = await client.post("/query", {
     company_id: companyId,
@@ -253,6 +259,8 @@ async function queryKnowledge({
     catalog_model_ids: catalogModelIds || [],
     response_language: responseLanguage || "",
   });
+
+  await recordTokenUsage(companyId, data?.usage, "rag");
 
   rememberQuery(cacheKey, data, companyId);
 

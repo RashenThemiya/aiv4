@@ -15,7 +15,7 @@ from app.models.schemas import (
 )
 from app.services.chroma_store import ChromaStore
 from app.services.model_ids import extract_model_ids, normalize_model_id
-from app.services.pdf_processor import chunk_pages, extract_pages_from_pdf
+from app.services.pdf_processor import chunk_pages, extract_pages_from_pdf, set_usage_callback
 from app.services.product_names import extract_product_names, normalize_product_name
 
 SYSTEM_PROMPT = """You are a customer support and product recommendation assistant. Answer using the provided context from company documents.
@@ -125,6 +125,9 @@ class RAGEngine:
     def __init__(self) -> None:
         self.store = ChromaStore()
         self.openai = OpenAI(api_key=settings.openai_api_key)
+        self._token_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        self.store.set_usage_callback(self._record_usage)
+        set_usage_callback(self._record_usage)
         self.cross_encoder = None
         if settings.enable_local_cross_encoder:
             try:
@@ -133,9 +136,30 @@ class RAGEngine:
             except ImportError:
                 self.cross_encoder = None
 
+    def begin_usage_tracking(self) -> None:
+        self._token_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+    def end_usage_tracking(self) -> dict[str, int]:
+        return dict(self._token_usage)
+
+    def _record_usage(self, input_tokens: int, output_tokens: int, total_tokens: int) -> None:
+        self._token_usage["input_tokens"] += int(input_tokens or 0)
+        self._token_usage["output_tokens"] += int(output_tokens or 0)
+        self._token_usage["total_tokens"] += int(total_tokens or input_tokens + output_tokens or 0)
+
+    def _chat_completion(self, **kwargs):
+        response = self.openai.chat.completions.create(**kwargs)
+        usage = getattr(response, "usage", None)
+        if usage:
+            input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+            output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+            total_tokens = int(getattr(usage, "total_tokens", input_tokens + output_tokens) or 0)
+            self._record_usage(input_tokens, output_tokens, total_tokens)
+        return response
+
     def _expand_query(self, question: str) -> list[str]:
         try:
-            resp = self.openai.chat.completions.create(
+            resp = self._chat_completion(
                 model=settings.openai_chat_model,
                 messages=[{
                     "role": "user",
@@ -293,7 +317,7 @@ class RAGEngine:
                 f"{chunk.get('content', '')[:700]}"
             )
         try:
-            response = self.openai.chat.completions.create(
+            response = self._chat_completion(
                 model=settings.openai_chat_model,
                 messages=[{
                     "role": "user",
@@ -352,7 +376,7 @@ class RAGEngine:
         if not settings.enable_multilingual_search:
             return [question]
         try:
-            response = self.openai.chat.completions.create(
+            response = self._chat_completion(
                 model=settings.openai_chat_model,
                 messages=[{
                     "role": "user",
@@ -391,7 +415,7 @@ class RAGEngine:
         customer_messages.append(question)
         customer_evidence = "\n".join(customer_messages)
         try:
-            response = self.openai.chat.completions.create(
+            response = self._chat_completion(
                 model=settings.openai_chat_model,
                 messages=[{
                     "role": "user",
@@ -1553,7 +1577,7 @@ class RAGEngine:
         recent_history = scoped_history[-settings.conversation_history_messages:]
         conversation = "\n".join(recent_history) or "(no earlier messages)"
         started = perf_counter()
-        response = self.openai.chat.completions.create(
+        response = self._chat_completion(
             model=settings.openai_chat_model,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -2025,7 +2049,7 @@ class RAGEngine:
     ) -> str:
         """Remove or correct invented model identifiers using exact source text."""
         try:
-            response = self.openai.chat.completions.create(
+            response = self._chat_completion(
                 model=settings.openai_chat_model,
                 messages=[{
                     "role": "user",
@@ -2061,7 +2085,7 @@ class RAGEngine:
             for comparator, number, unit in unsupported_claims
         )
         try:
-            response = self.openai.chat.completions.create(
+            response = self._chat_completion(
                 model=settings.openai_chat_model,
                 messages=[{
                     "role": "user",
@@ -2129,7 +2153,7 @@ class RAGEngine:
             return question
         recent = history[-settings.conversation_history_messages:]
         try:
-            response = self.openai.chat.completions.create(
+            response = self._chat_completion(
                 model=settings.openai_chat_model,
                 messages=[{
                     "role": "user",
@@ -2176,7 +2200,7 @@ class RAGEngine:
             else ""
         )
         try:
-            response = self.openai.chat.completions.create(
+            response = self._chat_completion(
                 model=settings.openai_chat_model,
                 messages=[{
                     "role": "user",
@@ -2238,7 +2262,7 @@ class RAGEngine:
                 f"{item['content'][:1200]}"
                 for i, item in enumerate(candidates)
             )
-            response = self.openai.chat.completions.create(
+            response = self._chat_completion(
                 model=settings.openai_chat_model,
                 messages=[{
                     "role": "user",

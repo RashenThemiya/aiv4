@@ -41,9 +41,19 @@ const companySchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    shippingDetails: {
+      senderName: { type: String, default: "", trim: true },
+      phone: { type: String, default: "", trim: true },
+      address: { type: String, default: "", trim: true },
+    },
     isActive: {
       type: Boolean,
       default: true,
+    },
+    monthlyTokenLimit: {
+      type: Number,
+      default: 1000000,
+      min: 0,
     },
     widgetApiKeyHash: {
       type: String,

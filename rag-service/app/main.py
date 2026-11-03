@@ -24,6 +24,7 @@ from app.models.schemas import (
     IngestResponse,
     QueryRequest,
     QueryResponse,
+    TokenUsage,
     ProductCatalogResponse,
     UpdateDocumentActiveRequest,
 )
@@ -217,15 +218,17 @@ def ingest_document(request: IngestRequest):
 
     try:
         with engine_lock:
+            engine.begin_usage_tracking()
             chunks = engine.ingest(
-            company_id=request.company_id,
-            document_id=request.document_id,
-            file_path=request.file_path,
-            document_name=request.document_name,
-            document_version=request.document_version,
-            effective_date=request.effective_date,
-            is_active=request.is_active,
-        )
+                company_id=request.company_id,
+                document_id=request.document_id,
+                file_path=request.file_path,
+                document_name=request.document_name,
+                document_version=request.document_version,
+                effective_date=request.effective_date,
+                is_active=request.is_active,
+            )
+            ingest_usage = engine.end_usage_tracking()
         media_dir = str(Path(request.file_path).parent / "media" / request.document_id)
         media = extract_embedded_images(request.file_path, media_dir)
         return IngestResponse(
@@ -233,6 +236,7 @@ def ingest_document(request: IngestRequest):
             chunks_indexed=chunks,
             message=f"Indexed {chunks} chunks for document {request.document_id}",
             media=media,
+            usage=TokenUsage(**ingest_usage),
         )
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -279,7 +283,8 @@ def query_knowledge(request: QueryRequest):
 
     try:
         with engine_lock:
-            return engine.query(
+            engine.begin_usage_tracking()
+            result = engine.query(
                 company_id=request.company_id,
                 question=request.question,
                 top_k=request.top_k,
@@ -291,6 +296,8 @@ def query_knowledge(request: QueryRequest):
                 catalog_model_ids=request.catalog_model_ids,
                 response_language=request.response_language,
             )
+            result.usage = TokenUsage(**engine.end_usage_tracking())
+            return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
 

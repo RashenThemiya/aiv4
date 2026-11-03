@@ -13,6 +13,7 @@ const { verifyGoogleIdToken } = require("../services/googleAuth");
 const { verifyExternalUserToken } = require("../services/externalUserAuth");
 const { canAccessCompany } = require("../middleware/auth");
 const { createRateLimit } = require("../middleware/rateLimit");
+const { assertTokenAllowance, recordTokenUsage } = require("../services/tokenUsage");
 
 const router = express.Router({ mergeParams: true });
 const widgetRateLimit = createRateLimit({
@@ -310,6 +311,7 @@ router.post("/realtime/session", async (req, res) => {
   try {
     const company = await getCompanyOrFail(req.params.companyId);
     await ensureWidgetAccess(req, company);
+    await assertTokenAllowance(company._id);
     if (!config.openaiApiKey) {
       return res.status(503).json({ error: "Realtime voice is not configured" });
     }
@@ -381,6 +383,32 @@ router.post("/realtime/session", async (req, res) => {
   }
 });
 
+router.post("/realtime/usage", async (req, res) => {
+  try {
+    const company = await getCompanyOrFail(req.params.companyId);
+    await ensureWidgetAccess(req, company);
+    const responseId = String(req.body?.responseId || "").trim();
+    const usage = req.body?.usage || {};
+    const inputTokens = Number(usage.input_tokens || 0);
+    const outputTokens = Number(usage.output_tokens || 0);
+    const totalTokens = Number(usage.total_tokens || inputTokens + outputTokens);
+    if (!responseId || !Number.isSafeInteger(inputTokens) || !Number.isSafeInteger(outputTokens)
+      || !Number.isSafeInteger(totalTokens) || inputTokens < 0 || outputTokens < 0
+      || totalTokens <= 0 || totalTokens > 10000000) {
+      return res.status(400).json({ error: "Invalid realtime usage report" });
+    }
+    const result = await recordTokenUsage(
+      company._id,
+      { input_tokens: inputTokens, output_tokens: outputTokens, total_tokens: totalTokens },
+      "realtime",
+      { operationId: `realtime:${responseId}` }
+    );
+    res.json({ recorded: !result?.duplicate, duplicate: Boolean(result?.duplicate) });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+});
+
 router.post("/", async (req, res) => {
   try {
     const requestStarted = nowMs();
@@ -447,10 +475,13 @@ router.post("/", async (req, res) => {
       });
     }
 
+    await assertTokenAllowance(company._id);
+
     const preprocessStarted = nowMs();
     const preprocessed = await preprocessUserMessage(originalMessage, {
       skipSmallTalk: isSuggestion === true,
       responseLanguage: commerce.language,
+      companyId: company._id.toString(),
     });
     timingsMs.preprocessing = nowMs() - preprocessStarted;
 

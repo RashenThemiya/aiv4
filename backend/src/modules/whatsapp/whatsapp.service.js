@@ -31,6 +31,22 @@ function buildPhoneNumberUrl(phoneNumberId) {
   return `https://graph.facebook.com/${version}/${phoneNumberId}`;
 }
 
+function splitMessage(text, limit) {
+  const remaining = String(text || "").trim();
+  if (!remaining) return [];
+  const chunks = [];
+  let rest = remaining;
+  while (rest.length > limit) {
+    const window = rest.slice(0, limit + 1);
+    const breakAt = Math.max(window.lastIndexOf("\n"), window.lastIndexOf(" "));
+    const end = breakAt >= Math.floor(limit * 0.6) ? breakAt : limit;
+    chunks.push(rest.slice(0, end).trim());
+    rest = rest.slice(end).trim();
+  }
+  if (rest) chunks.push(rest);
+  return chunks;
+}
+
 function createEchoReply(incomingMessage) {
   if (!incomingMessage.isSupported) {
     return incomingMessage.fallbackText;
@@ -165,6 +181,7 @@ async function sendTextMessage({ to, text, companyId, integration }) {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
+        timeout: 20000,
       }
     );
 
@@ -190,7 +207,10 @@ async function sendImageMessage({ to, imageUrl, caption = "", integration }) {
       type: "image",
       image: { link: imageUrl, caption: String(caption || "").slice(0, 1024) },
     },
-    { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" } }
+    {
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      timeout: 20000,
+    }
   );
   return response.data;
 }
@@ -235,7 +255,10 @@ async function sendChoiceMessage({ to, text, suggestions, integration }) {
       type: "interactive",
       interactive,
     },
-    { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" } }
+    {
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      timeout: 20000,
+    }
   );
   return response.data;
 }
@@ -253,6 +276,7 @@ async function validateIntegration({ companyId }) {
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
+      timeout: 20000,
     });
   } catch (err) {
     err.whatsappContext = {
@@ -277,18 +301,23 @@ async function replyToIncomingMessage(incomingMessage) {
   const integration =
     reply.integration || (await getIntegrationByPhoneNumberId(incomingMessage.phoneNumberId));
 
-  const metaResult = reply.suggestions?.length
-    ? await sendChoiceMessage({
-      to: incomingMessage.senderPhoneNumber,
-      text: reply.answer,
-      suggestions: reply.suggestions,
-      integration,
-    })
-    : await sendTextMessage({
-      to: incomingMessage.senderPhoneNumber,
-      text: reply.answer,
-      integration,
-    });
+  const chunks = splitMessage(reply.answer, 4000);
+  const metaResults = [];
+  for (let index = 0; index < chunks.length; index += 1) {
+    const isLast = index === chunks.length - 1;
+    metaResults.push(isLast && reply.suggestions?.length
+      ? await sendChoiceMessage({
+        to: incomingMessage.senderPhoneNumber,
+        text: chunks[index],
+        suggestions: reply.suggestions,
+        integration,
+      })
+      : await sendTextMessage({
+        to: incomingMessage.senderPhoneNumber,
+        text: chunks[index],
+        integration,
+      }));
+  }
   const mediaResults = [];
   for (const media of (reply.media || []).slice(0, 3)) {
     mediaResults.push(await sendImageMessage({
@@ -305,7 +334,8 @@ async function replyToIncomingMessage(incomingMessage) {
     media: reply.media || [],
     conversationId: reply.conversationId,
     sessionId: reply.sessionId,
-    metaResult,
+    metaResult: metaResults.at(-1) || null,
+    metaResults,
     mediaResults,
   };
 }

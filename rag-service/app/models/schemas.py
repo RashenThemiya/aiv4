@@ -54,11 +54,18 @@ class QueryDiagnostics(BaseModel):
     retrieval: dict[str, int | bool | str] = Field(default_factory=dict)
 
 
+class TokenUsage(BaseModel):
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+
+
 class QueryResponse(BaseModel):
     answer: str
     sources: list[SourceChunk]
     suggestions: list[ClarificationSuggestion] = Field(default_factory=list)
     diagnostics: QueryDiagnostics | None = None
+    usage: TokenUsage = Field(default_factory=TokenUsage)
 
 
 class ProductCatalogItem(BaseModel):
@@ -77,6 +84,7 @@ class IngestResponse(BaseModel):
     chunks_indexed: int
     message: str
     media: list[dict] = Field(default_factory=list)
+    usage: TokenUsage = Field(default_factory=TokenUsage)
 
 
 class DeleteResponse(BaseModel):

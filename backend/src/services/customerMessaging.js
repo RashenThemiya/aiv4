@@ -2,6 +2,7 @@ const { processCommerceMessage } = require("./commerce");
 const { preprocessUserMessage } = require("./messagePreprocessor");
 const ragClient = require("./ragClient");
 const { findQuestionMedia, mapSourcesWithMedia } = require("./sourceMedia");
+const { assertTokenAllowance } = require("./tokenUsage");
 
 async function processCustomerMessage({ companyId, sessionId, channel, text, customer }) {
   const commerce = await processCommerceMessage({
@@ -23,7 +24,11 @@ async function processCustomerMessage({ companyId, sessionId, channel, text, cus
   }
 
   const { conversation, language } = commerce;
-  const preprocessed = await preprocessUserMessage(text, { responseLanguage: language });
+  await assertTokenAllowance(companyId);
+  const preprocessed = await preprocessUserMessage(text, {
+    responseLanguage: language,
+    companyId: String(companyId),
+  });
   if (preprocessed.type === "small_talk") {
     conversation.messages.push({ role: "assistant", content: preprocessed.reply });
     await conversation.save();

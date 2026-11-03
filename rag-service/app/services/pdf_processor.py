@@ -19,6 +19,12 @@ _vision_client = OpenAI(
     timeout=settings.openai_request_timeout_seconds,
     max_retries=settings.openai_max_retries,
 )
+_usage_callback = None
+
+
+def set_usage_callback(callback) -> None:
+    global _usage_callback
+    _usage_callback = callback
 
 if settings.tesseract_cmd:
     pytesseract.pytesseract.tesseract_cmd = settings.tesseract_cmd
@@ -279,6 +285,15 @@ def _describe_image(image_bytes: bytes, *, full_page: bool = False) -> str:
             max_tokens=settings.vision_max_tokens,
             temperature=0,
         )
+        usage = getattr(resp, "usage", None)
+        if usage and _usage_callback:
+            input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+            output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+            _usage_callback(
+                input_tokens,
+                output_tokens,
+                int(getattr(usage, "total_tokens", input_tokens + output_tokens) or 0),
+            )
         return (resp.choices[0].message.content or "").strip()
     except Exception:
         return ""

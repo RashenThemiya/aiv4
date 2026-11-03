@@ -9,12 +9,13 @@ venv/
 .env
 .env.local
 
-# Deployment secrets
-.env.*
-!.env.example
+# Docker deploy files
+Dockerfile
+**/Dockerfile
+docker-compose*.yml
+docker-compose*.yaml
+DOCKER.md
 !.env.server.example
-*.pem
-*.key
 
 # Uploads & data
 backend/uploads/

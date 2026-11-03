@@ -7,6 +7,7 @@ const SmsIntegration = require("../../models/SmsIntegration");
 const SmsMessageLog = require("../../models/SmsMessageLog");
 const WebhookEvent = require("../../models/WebhookEvent");
 const ragClient = require("../../services/ragClient");
+const { assertTokenAllowance } = require("../../services/tokenUsage");
 const { preprocessUserMessage } = require("../../services/messagePreprocessor");
 
 const MAX_SMS_REPLY_LENGTH = 320;
@@ -101,7 +102,10 @@ async function createRagReply(incomingMessage) {
 
   conversation.messages.push({ role: "user", content: question });
 
-  const preprocessed = await preprocessUserMessage(question);
+  await assertTokenAllowance(company._id);
+  const preprocessed = await preprocessUserMessage(question, {
+    companyId: company._id.toString(),
+  });
   let answer;
   let sources = [];
 

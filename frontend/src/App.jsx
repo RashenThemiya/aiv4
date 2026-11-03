@@ -3,6 +3,7 @@ import {
   Bot,
   Building2,
   CheckCircle2,
+  Coins,
   Download,
   FileText,
   History,
@@ -30,6 +31,7 @@ import { AdminShell } from "./components/AdminShell";
 import { LoginPage } from "./components/LoginPage";
 import { CommercePanel } from "./components/CommercePanel";
 import { DashboardOverview } from "./components/DashboardOverview";
+import { CreditWalletPanel } from "./components/CreditWalletPanel";
 import {
   Field,
   IconButton,
@@ -179,7 +181,7 @@ export default function App() {
   const [voiceOutputTranscript, setVoiceOutputTranscript] = useState("");
   const [widgetKeyResult, setWidgetKeyResult] = useState(null);
   const [widgetApiKeyInput, setWidgetApiKeyInput] = useState("");
-  const [widgetEmbedMode, setWidgetEmbedMode] = useState("all");
+  const [widgetEmbedMode, setWidgetEmbedMode] = useState("guest");
   const [widgetThemeForm, setWidgetThemeForm] = useState(defaultWidgetTheme);
   const [showWidgetPreview, setShowWidgetPreview] = useState(false);
   const [widgetPreviewOpen, setWidgetPreviewOpen] = useState(false);
@@ -237,6 +239,7 @@ export default function App() {
         { id: "sms", label: "SMS", icon: MessageSquare },
         { id: "documents", label: "Knowledge base", icon: FileText },
         { id: "history", label: "Conversations", icon: History },
+        { id: "credits", label: "AI credits", icon: Coins },
         { id: "settings", label: "Business settings", icon: SlidersHorizontal },
         { id: "help", label: "Website assistant", icon: Search },
       ];
@@ -250,6 +253,7 @@ export default function App() {
     { id: "documents", label: "Knowledge base", icon: FileText },
     { id: "chat", label: "Test assistant", icon: MessageSquare },
     { id: "history", label: "Conversations", icon: History },
+    { id: "credits", label: "AI credits", icon: Coins },
     { id: "settings", label: "Business settings", icon: SlidersHorizontal },
     { id: "help", label: "Website assistant", icon: Search },
   ];
@@ -458,7 +462,7 @@ export default function App() {
       setChatMessages([]);
       setWidgetKeyResult(null);
       setWidgetApiKeyInput("");
-      setWidgetEmbedMode("all");
+      setWidgetEmbedMode("guest");
       setWidgetThemeForm(defaultWidgetTheme);
       setShowWidgetPreview(false);
       setWidgetPreviewOpen(false);
@@ -493,7 +497,7 @@ export default function App() {
     setSelectedConversation(null);
     setWidgetKeyResult(null);
     setWidgetApiKeyInput("");
-    setWidgetEmbedMode("all");
+    setWidgetEmbedMode("guest");
     setWidgetThemeForm(defaultWidgetTheme);
     setShowWidgetPreview(false);
     setWidgetPreviewOpen(false);
@@ -511,6 +515,9 @@ export default function App() {
         name: selectedCompany.name || "",
         slug: selectedCompany.slug || "",
         description: selectedCompany.description || "",
+        senderName: selectedCompany.shippingDetails?.senderName || selectedCompany.name || "",
+        senderPhone: selectedCompany.shippingDetails?.phone || "",
+        senderAddress: selectedCompany.shippingDetails?.address || "",
       });
     }
   }, [selectedCompany, editingCompany]);
@@ -545,6 +552,11 @@ export default function App() {
         api.companies.update(selectedCompany._id, {
           name: companyForm.name.trim(),
           description: companyForm.description.trim(),
+          shippingDetails: {
+            senderName: companyForm.senderName.trim(),
+            phone: companyForm.senderPhone.trim(),
+            address: companyForm.senderAddress.trim(),
+          },
           isActive: selectedCompany.isActive,
         }),
       "Company updated"
@@ -601,7 +613,7 @@ export default function App() {
     setChatMessages([]);
     setWidgetKeyResult(null);
     setWidgetApiKeyInput("");
-    setWidgetEmbedMode("all");
+    setWidgetEmbedMode("guest");
     setWidgetThemeForm(defaultWidgetTheme);
     setShowWidgetPreview(false);
     setWidgetPreviewOpen(false);
@@ -707,9 +719,18 @@ export default function App() {
 
   async function copyWidgetSnippet() {
     if (!selectedCompany) return;
+    if (!widgetApiKeyInput.trim()) {
+      setError("Generate a widget API key before copying the website embed code.");
+      return;
+    }
     const snippet = widgetSnippet();
-    await navigator.clipboard.writeText(snippet);
-    setNotice("Widget embed code copied");
+    try {
+      await navigator.clipboard.writeText(snippet);
+      setError("");
+      setNotice("Widget embed code copied");
+    } catch {
+      setError("The browser could not copy the embed code. Select the code and copy it manually.");
+    }
   }
 
   function jsString(value) {
@@ -1358,6 +1379,9 @@ ${widgetScriptSrc()}`;
         onOutputTranscriptDelta: (delta) => {
           setVoiceOutputTranscript((current) => current + delta);
         },
+        onUsage: (responseId, usage) => {
+          api.chat.reportRealtimeUsage(selectedCompany._id, responseId, usage).catch(() => {});
+        },
         onUnclearTranscript: () => {
           const warning = {
             si: "මට එය පැහැදිලිව හඳුනාගත නොහැකි විය. කරුණාකර නැවත කියන්න.",
@@ -1965,7 +1989,7 @@ ${widgetScriptSrc()}`;
           activeSection !== "backups" ? (
             <>
               {activeSection === "dashboard" && (
-                <section className="grid gap-4 md:grid-cols-3">
+                <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                   <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-200">
                     <div className="text-sm font-semibold text-slate-500">Seller businesses</div>
                     <div className="mt-2 text-3xl font-bold tracking-tight text-slate-950">{companies.length}</div>
@@ -1978,11 +2002,17 @@ ${widgetScriptSrc()}`;
                     <div className="text-sm font-semibold text-slate-500">Platform health</div>
                     <div className="mt-2"><StatusBadge status={health?.mongodb || "unknown"} /></div>
                   </div>
+                  <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-200">
+                    <div className="text-sm font-semibold text-slate-500">Available AI credits</div>
+                    <div className="mt-2 text-3xl font-bold tracking-tight text-slate-950">
+                      {new Intl.NumberFormat().format(companies.reduce((sum, company) => sum + Number(company.tokenUsage?.wallet?.availableCredits || 0), 0))}
+                    </div>
+                  </div>
                 </section>
               )}
               {activeSection === "dashboard" && (
                 <section className="overflow-hidden bg-white border shadow-sm rounded-2xl border-slate-200">
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+                  <div className="flex flex-col gap-3 px-4 py-3 border-b border-slate-200 md:flex-row md:items-center md:justify-between">
                     <div className="flex items-center gap-2">
                       <Building2 size={18} />
                       <h2 className="font-semibold text-slate-950">Seller businesses</h2>
@@ -2004,6 +2034,9 @@ ${widgetScriptSrc()}`;
                           <div>
                             <div className="font-semibold text-slate-950">{company.name}</div>
                             <div className="mt-1 text-sm text-slate-500">{company.slug}</div>
+                            <div className="mt-2 text-xs text-slate-500">
+                              {new Intl.NumberFormat().format(company.tokenUsage?.wallet?.availableCredits || 0)} credits available
+                            </div>
                           </div>
                           <StatusBadge status={company.isActive ? "active" : "inactive"} />
                         </div>
@@ -2039,6 +2072,7 @@ ${widgetScriptSrc()}`;
                           <th className="px-4 py-3">Company</th>
                           <th className="px-4 py-3">Slug</th>
                           <th className="px-4 py-3">Status</th>
+                          <th className="px-4 py-3">Token usage</th>
                           <th className="px-4 py-3">Created</th>
                           <th className="px-4 py-3 text-right">Actions</th>
                         </tr>
@@ -2055,6 +2089,12 @@ ${widgetScriptSrc()}`;
                             <td className="px-4 py-3 text-slate-600">{company.slug}</td>
                             <td className="px-4 py-3">
                               <StatusBadge status={company.isActive ? "active" : "inactive"} />
+                            </td>
+                            <td className="px-4 py-3 text-slate-600">
+                              <div className="font-semibold text-slate-800">{new Intl.NumberFormat().format(company.tokenUsage?.wallet?.availableCredits || 0)} credits</div>
+                              <div className="text-xs text-slate-400">
+                                {new Intl.NumberFormat().format(company.tokenUsage?.totalTokens || 0)} tokens used this month
+                              </div>
                             </td>
                             <td className="px-4 py-3 text-slate-600">{formatDate(company.createdAt)}</td>
                             <td className="px-4 py-3">
@@ -2089,8 +2129,16 @@ ${widgetScriptSrc()}`;
                 />
               )}
 
+              {activeSection === "credits" && (
+                <CreditWalletPanel
+                  company={selectedCompany}
+                  isSuperAdmin={isSuperAdmin}
+                  onCreditsChanged={loadCompanies}
+                />
+              )}
+
               {["orders", "products", "messenger"].includes(activeSection) && (
-                <CommercePanel companyId={selectedCompany._id} companyName={selectedCompany.name} section={activeSection} />
+                <CommercePanel companyId={selectedCompany._id} company={selectedCompany} section={activeSection} />
               )}
 
               {(activeSection === "settings" || activeSection === "companies") && (
@@ -2325,6 +2373,39 @@ ${widgetScriptSrc()}`;
                               description: event.target.value,
                             }))
                           }
+                        />
+                      </Field>
+                    </div>
+                    <div className="lg:col-span-2 mt-2 border-t border-slate-200 pt-4">
+                      <h3 className="font-semibold text-slate-900">Parcel sender details</h3>
+                      <p className="mt-1 text-sm text-slate-500">Printed in the FROM section of shipping labels.</p>
+                    </div>
+                    <Field label="Sender / business name">
+                      <TextInput
+                        value={companyForm.senderName}
+                        onChange={(event) =>
+                          setCompanyForm((current) => ({ ...current, senderName: event.target.value }))
+                        }
+                        placeholder={selectedCompany.name}
+                      />
+                    </Field>
+                    <Field label="Sender phone">
+                      <TextInput
+                        value={companyForm.senderPhone}
+                        onChange={(event) =>
+                          setCompanyForm((current) => ({ ...current, senderPhone: event.target.value }))
+                        }
+                        placeholder="+94 77 123 4567"
+                      />
+                    </Field>
+                    <div className="lg:col-span-2">
+                      <Field label="Pickup / return address">
+                        <TextArea
+                          value={companyForm.senderAddress}
+                          onChange={(event) =>
+                            setCompanyForm((current) => ({ ...current, senderAddress: event.target.value }))
+                          }
+                          placeholder="Street, city and postal code"
                         />
                       </Field>
                     </div>
@@ -3450,56 +3531,98 @@ ${widgetScriptSrc()}`;
 
               {activeSection === "help" && (
                 <section className="bg-white border rounded border-slate-200">
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+                  <div className="flex flex-col gap-3 px-4 py-3 border-b border-slate-200 md:flex-row md:items-center md:justify-between">
                     <div className="flex items-center gap-2">
                       <Search size={18} />
-                      <h2 className="font-semibold text-slate-950">Connect Website Widget</h2>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h2 className="font-semibold text-slate-950">Website Assistant</h2>
+                          <StatusBadge status={selectedCompany.widgetApiKeyPreview ? "connected" : "inactive"} />
+                        </div>
+                        <p className="text-xs text-slate-500">Install, customize and test the customer website chatbot.</p>
+                      </div>
                     </div>
-                    <SecondaryButton onClick={copyWidgetSnippet}>
-                      Copy Embed
-                    </SecondaryButton>
+                    <div className="flex flex-wrap gap-2">
+                      <SecondaryButton onClick={handleGenerateWidgetApiKey} disabled={loading.companies}>
+                        {loading.companies ? <Loader2 className="animate-spin" size={16} /> : <RefreshCcw size={16} />}
+                        {selectedCompany.widgetApiKeyPreview ? "Rotate key" : "Generate key"}
+                      </SecondaryButton>
+                      <SecondaryButton onClick={copyWidgetSnippet} disabled={!widgetApiKeyInput.trim()}>
+                        Copy Embed
+                      </SecondaryButton>
+                      <PrimaryButton
+                        onClick={() => {
+                          setWidgetPreviewOpen(true);
+                          setShowWidgetPreview(true);
+                        }}
+                        disabled={!widgetApiKeyInput.trim()}
+                      >
+                        <MessageSquare size={16} />
+                        Test Live Widget
+                      </PrimaryButton>
+                    </div>
                   </div>
                   <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_460px]">
                     <div className="space-y-4">
-                      <div className="p-4 border rounded border-slate-200 bg-slate-50">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
-                          <span className="flex items-center justify-center w-6 h-6 text-xs text-white rounded bg-slate-900">1</span>
-                          Generate widget API key
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <h3 className="font-semibold text-emerald-950">Website channel connection</h3>
+                            <p className="mt-1 text-sm leading-6 text-emerald-800">
+                              Generate one key for this company, test the assistant here, then copy the embed code into the customer website.
+                            </p>
+                          </div>
+                          <StatusBadge status={selectedCompany.widgetApiKeyPreview ? "connected" : "inactive"} />
                         </div>
-                        <p className="mt-1 text-sm text-slate-600">
-                          Open Business settings and click Generate / Rotate. Copy the key when it appears.
-                        </p>
+                        <div className="mt-4">
+                          <Field label="Widget API key">
+                            <TextInput
+                              value={widgetApiKeyInput}
+                              onChange={(event) => setWidgetApiKeyInput(event.target.value)}
+                              placeholder="Generate a key or paste an existing full key"
+                            />
+                          </Field>
+                          <p className="mt-1 text-xs text-emerald-800">
+                            {selectedCompany.widgetApiKeyPreview
+                              ? `Saved key preview: ${selectedCompany.widgetApiKeyPreview}. Generate a new key if the full value was not retained.`
+                              : "No website key has been generated for this company."}
+                          </p>
+                        </div>
+                        {widgetKeyResult?.apiKey && (
+                          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                            <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Copy and store this key now</div>
+                            <code className="mt-2 block break-all text-xs text-amber-950">{widgetKeyResult.apiKey}</code>
+                          </div>
+                        )}
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <PrimaryButton onClick={handleGenerateWidgetApiKey} disabled={loading.companies}>
+                            {loading.companies ? <Loader2 className="animate-spin" size={16} /> : <RefreshCcw size={16} />}
+                            {selectedCompany.widgetApiKeyPreview ? "Rotate API key" : "Generate API key"}
+                          </PrimaryButton>
+                          <SecondaryButton
+                            onClick={() => {
+                              setWidgetPreviewOpen(true);
+                              setShowWidgetPreview(true);
+                            }}
+                            disabled={!widgetApiKeyInput.trim()}
+                          >
+                            <MessageSquare size={16} /> Test chatbot
+                          </SecondaryButton>
+                        </div>
                       </div>
-                      <div className="p-4 border rounded border-slate-200 bg-slate-50">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
-                          <span className="flex items-center justify-center w-6 h-6 text-xs text-white rounded bg-slate-900">2</span>
-                          Build and host widget file
-                        </div>
-                        <pre className="p-3 mt-2 overflow-x-auto text-xs text-white rounded bg-slate-900">
-{`cd frontend
-npm run build:widget`}
-                        </pre>
-                        <p className="mt-2 text-sm text-slate-600">
-                          Upload `dist-widget/rag-chat-widget.iife.js` to your server, CDN, or static hosting.
-                        </p>
-                      </div>
-                      <div className="p-4 border rounded border-slate-200 bg-slate-50">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
-                          <span className="flex items-center justify-center w-6 h-6 text-xs text-white rounded bg-slate-900">3</span>
-                          Paste embed code into website
-                        </div>
-                        <p className="mt-1 text-sm text-slate-600">
-                          Add the code before the closing body tag. Replace localhost URLs with deployed URLs in production.
-                        </p>
-                      </div>
-                      <div className="p-4 border rounded border-slate-200 bg-slate-50">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
-                          <span className="flex items-center justify-center w-6 h-6 text-xs text-white rounded bg-slate-900">4</span>
-                          Test from this dashboard
-                        </div>
-                        <p className="mt-1 text-sm text-slate-600">
-                          Paste the API key into Business settings, then click Test Widget to open the assistant and send a test message.
-                        </p>
+
+                      <div className="rounded-xl border border-slate-200 bg-white p-5">
+                        <h3 className="font-semibold text-slate-950">Installation</h3>
+                        <ol className="mt-3 space-y-3 text-sm text-slate-600">
+                          <li className="flex gap-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">1</span><span>Choose the login mode and copy the generated embed code.</span></li>
+                          <li className="flex gap-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">2</span><span>Paste it immediately before the website's closing <code>&lt;/body&gt;</code> tag.</span></li>
+                          <li className="flex gap-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">3</span><span>Publish the website and send a real test message from the floating chat button.</span></li>
+                        </ol>
+                        {api.baseUrl.includes("localhost") && (
+                          <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+                            The generated code currently uses localhost. Deploy the backend and set VITE_API_BASE_URL before copying production embed code.
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div className="space-y-4">
@@ -3524,7 +3647,7 @@ npm run build:widget`}
   <span className="text-xs font-semibold tracking-wide uppercase text-slate-500">
     Embed Code
   </span>
-  <SecondaryButton onClick={copyWidgetSnippet}>
+  <SecondaryButton onClick={copyWidgetSnippet} disabled={!widgetApiKeyInput.trim()}>
     Copy
   </SecondaryButton>
 </div>
@@ -3539,8 +3662,17 @@ npm run build:widget`}
                         )}
                       </div>
                       <div>
-                        <div className="mb-2 text-xs font-semibold tracking-wide uppercase text-slate-500">
-                          Small Preview
+                        <div className="mb-2 flex items-center justify-between gap-3">
+                          <span className="text-xs font-semibold tracking-wide uppercase text-slate-500">Visual Preview</span>
+                          <SecondaryButton
+                            onClick={() => {
+                              setWidgetPreviewOpen(true);
+                              setShowWidgetPreview(true);
+                            }}
+                            disabled={!widgetApiKeyInput.trim()}
+                          >
+                            <MessageSquare size={15} /> Open interactive test
+                          </SecondaryButton>
                         </div>
                         <div className="relative h-[360px] overflow-hidden rounded border border-slate-200 bg-slate-100 p-4">
                           <div className="p-4 bg-white border rounded border-slate-200">

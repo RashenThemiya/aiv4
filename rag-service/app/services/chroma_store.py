@@ -44,6 +44,10 @@ class ChromaStore:
         self.fts = FTSStore(fts_path)
         self._fts_counts: dict[str, int] = {}
         self._catalog_cache: dict[str, dict] = {}
+        self.usage_callback = None
+
+    def set_usage_callback(self, callback) -> None:
+        self.usage_callback = callback
 
     def _ensure_fts(self, company_id: str, collection) -> None:
         if not hasattr(self, "fts"):
@@ -98,6 +102,10 @@ class ChromaStore:
                 model=settings.openai_embedding_model,
                 input=texts[start:start + batch_size],
             )
+            usage = getattr(response, "usage", None)
+            if usage and getattr(self, "usage_callback", None):
+                input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+                self.usage_callback(input_tokens, 0, int(getattr(usage, "total_tokens", input_tokens) or 0))
             embeddings.extend(item.embedding for item in response.data)
         return embeddings
 

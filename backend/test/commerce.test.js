@@ -28,6 +28,7 @@ const { mapIncomingWebhook } = require("../src/modules/messenger/messenger.mappe
 const { mapIncomingWebhook: mapWhatsAppWebhook } = require("../src/modules/whatsapp/whatsapp.mapper");
 const Conversation = require("../src/models/Conversation");
 const Order = require("../src/models/Order");
+const Company = require("../src/models/Company");
 
 test("detects all supported language selections", () => {
   assert.equal(detectLanguage("1"), "si");
@@ -218,6 +219,23 @@ test("conversation messages preserve extracted PDF media", async () => {
   await conversation.validate();
   assert.equal(conversation.messages[0].media.length, 1);
   assert.equal(conversation.messages[0].media[0].documentName, "Visual Guide.pdf");
+});
+
+test("company schema stores parcel sender details for shipping labels", async () => {
+  const company = new Company({
+    name: "Lanka Home Store",
+    slug: "lanka-home-store-label-test",
+    shippingDetails: {
+      senderName: "Lanka Home Store Dispatch",
+      phone: "+94 77 123 4567",
+      address: "10 Main Street, Colombo",
+    },
+  });
+  await company.validate();
+  assert.equal(company.shippingDetails.senderName, "Lanka Home Store Dispatch");
+  assert.equal(company.shippingDetails.phone, "+94 77 123 4567");
+  assert.equal(company.shippingDetails.address, "10 Main Street, Colombo");
+  assert.equal(company.monthlyTokenLimit, 1000000);
 });
 
 test("legacy orders remain readable when a product reference is absent", async () => {

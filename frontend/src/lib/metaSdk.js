@@ -108,9 +108,13 @@ export async function startWhatsAppEmbeddedSignup({ appId, configId, graphApiVer
       complete();
     }, {
       config_id: configId,
+      auth_type: "rerequest",
       response_type: "code",
       override_default_response_type: true,
-      extras: { setup: {}, sessionInfoVersion: "3" },
+      // Embedded Signup v4 keeps products and permissions in the Facebook
+      // Login for Business configuration. sessionInfoVersion belongs to the
+      // retired v2 flow and prevents reliable onboarding with a v4 config.
+      extras: { setup: {} },
     });
   });
 }

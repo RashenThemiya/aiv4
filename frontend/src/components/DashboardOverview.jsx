@@ -7,6 +7,7 @@ import {
   Package,
   ShoppingCart,
   Sparkles,
+  Gauge,
 } from "lucide-react";
 import { api, formatDate } from "../lib/api";
 import { classNames } from "../utils/classNames";
@@ -39,11 +40,16 @@ function ChannelRow({ name, detail, connected, onClick }) {
   );
 }
 
+function formatTokens(value) {
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(Number(value || 0));
+}
+
 export function DashboardOverview({ company, documents, conversations, setActiveSection }) {
   const [summary, setSummary] = useState(null);
   const [orders, setOrders] = useState([]);
   const [products, setProducts] = useState([]);
   const [channels, setChannels] = useState({ whatsapp: false, messenger: false });
+  const [tokenUsage, setTokenUsage] = useState(company.tokenUsage || null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -51,18 +57,20 @@ export function DashboardOverview({ company, documents, conversations, setActive
     async function load() {
       setLoading(true);
       const safe = (promise) => promise.catch(() => null);
-      const [orderSummary, orderList, productList, whatsapp, messenger] = await Promise.all([
+      const [orderSummary, orderList, productList, whatsapp, messenger, usage] = await Promise.all([
         safe(api.orders.summary(company._id)),
         safe(api.orders.list(company._id, { limit: 5 })),
         safe(api.products.list(company._id)),
         safe(api.whatsappIntegration.get(company._id)),
         safe(api.messengerIntegration.get(company._id)),
+        safe(api.companies.tokenUsage(company._id)),
       ]);
       if (!cancelled) {
         setSummary(orderSummary);
         setOrders(orderList?.orders || []);
         setProducts(productList || []);
         setChannels({ whatsapp: Boolean(whatsapp?.isActive), messenger: Boolean(messenger?.isActive) });
+        setTokenUsage(usage || company.tokenUsage || null);
         setLoading(false);
       }
     }
@@ -92,6 +100,32 @@ export function DashboardOverview({ company, documents, conversations, setActive
         <MetricCard icon={Package} label="Active products" value={loading ? "—" : products.filter((product) => product.isActive !== false).length} detail="Products available to the assistant" accent="cyan" />
         <MetricCard icon={MessageCircleMore} label="Conversations" value={conversations.length} detail="Customer conversations across channels" accent="violet" />
         <MetricCard icon={BookOpenText} label="Knowledge files" value={documents.length} detail={`${documents.filter((item) => item.status === "indexed").length} ready for customer answers`} accent="amber" />
+      </section>
+
+      <section className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm shadow-slate-200/50">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-3">
+            <span className="rounded-xl bg-violet-50 p-2.5 text-violet-700 ring-1 ring-violet-100">
+              <Gauge size={20} />
+            </span>
+            <div>
+              <h3 className="font-bold text-slate-900">Prepaid AI credits</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Balance carries forward until used
+              </p>
+            </div>
+          </div>
+          <div className="grid flex-1 gap-4 sm:grid-cols-3 lg:max-w-2xl">
+            <div><div className="text-xs font-medium text-slate-500">Available credits</div><div className="mt-1 text-xl font-bold text-slate-950">{formatTokens(tokenUsage?.wallet?.availableCredits)}</div></div>
+            <div><div className="text-xs font-medium text-slate-500">Lifetime used</div><div className="mt-1 text-xl font-bold text-slate-950">{formatTokens(tokenUsage?.wallet?.lifetimeUsed)}</div></div>
+            <div><div className="text-xs font-medium text-slate-500">Tokens this month</div><div className="mt-1 text-xl font-bold text-slate-950">{formatTokens(tokenUsage?.totalTokens)}</div></div>
+          </div>
+        </div>
+        <div className="mt-5 flex flex-col gap-3 border-t border-slate-100 pt-4 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+          <span>{formatTokens(tokenUsage?.inputTokens)} input tokens · {formatTokens(tokenUsage?.outputTokens)} output tokens this month</span>
+          <button type="button" onClick={() => setActiveSection("credits")} className="font-semibold text-emerald-700 hover:text-emerald-800">View wallet and transactions</button>
+        </div>
+        {tokenUsage?.wallet?.lowBalance && <p className={classNames("mt-3 text-xs font-semibold", tokenUsage?.wallet?.availableCredits > 0 ? "text-amber-700" : "text-rose-700")}>{tokenUsage?.wallet?.availableCredits > 0 ? "Credit balance is low. Purchase another package to prevent interruption." : "Credit balance is empty. AI knowledge answers are paused."}</p>}
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(330px,.6fr)]">
