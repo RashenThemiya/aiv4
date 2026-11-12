@@ -5,7 +5,9 @@ RUN npm ci
 COPY . .
 ARG VITE_API_BASE_URL=/backend
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
-RUN npm run build && npm run build:widget && cp dist-widget/rag-chat-widget.iife.js dist/
+# `npm run build` also builds the widget into dist/dist-widget/. Keep a copy at the
+# old root path so existing embeds of /rag-chat-widget.iife.js keep working.
+RUN npm run build && cp dist/dist-widget/rag-chat-widget.iife.js dist/
 
 FROM nginx:stable-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
