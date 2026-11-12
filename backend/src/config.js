@@ -28,6 +28,10 @@ const config = {
     || process.env.WHATSAPP_APP_SECRET
     || process.env.MESSENGER_APP_SECRET,
   whatsappTokenEncryptionKey: process.env.WHATSAPP_TOKEN_ENCRYPTION_KEY,
+  whatsappTrackingTemplateName:
+    process.env.WHATSAPP_TRACKING_TEMPLATE_NAME || "",
+  whatsappTrackingTemplateLanguage:
+    process.env.WHATSAPP_TRACKING_TEMPLATE_LANGUAGE || "en_US",
   smsTokenEncryptionKey:
     process.env.SMS_TOKEN_ENCRYPTION_KEY || process.env.WHATSAPP_TOKEN_ENCRYPTION_KEY,
   messengerTokenEncryptionKey:

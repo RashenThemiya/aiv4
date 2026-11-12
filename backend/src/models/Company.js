@@ -46,6 +46,16 @@ const companySchema = new mongoose.Schema(
       phone: { type: String, default: "", trim: true },
       address: { type: String, default: "", trim: true },
     },
+    assistantSettings: {
+      welcomeMessage: {
+        en: { type: String, default: "", trim: true },
+        si: { type: String, default: "", trim: true },
+        ta: { type: String, default: "", trim: true },
+      },
+      supportPhone: { type: String, default: "", trim: true },
+      supportWhatsApp: { type: String, default: "", trim: true },
+      businessHours: { type: String, default: "", trim: true },
+    },
     isActive: {
       type: Boolean,
       default: true,

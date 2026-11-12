@@ -1,12 +1,18 @@
 import {
   Activity,
+  BarChart3,
   Bot,
   Building2,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Coins,
   Download,
   FileText,
+  Globe2,
   History,
+  LifeBuoy,
+  Info,
   Loader2,
   Mic,
   MicOff,
@@ -19,9 +25,11 @@ import {
   Search,
   Send,
   Square,
+  Store,
   SlidersHorizontal,
   ShoppingCart,
   Trash2,
+  Truck,
   Upload,
   Users,
   XCircle,
@@ -32,6 +40,14 @@ import { LoginPage } from "./components/LoginPage";
 import { CommercePanel } from "./components/CommercePanel";
 import { DashboardOverview } from "./components/DashboardOverview";
 import { CreditWalletPanel } from "./components/CreditWalletPanel";
+import { GlobalBillingPanel } from "./components/GlobalBillingPanel";
+import { GlobalAnalyticsPanel } from "./components/GlobalAnalyticsPanel";
+import { ConversationsPanel } from "./components/ConversationsPanel";
+import { SupportRequestsPanel } from "./components/SupportRequestsPanel";
+import { SuperAdminDashboard } from "./components/SuperAdminDashboard";
+import { BusinessesPanel } from "./components/BusinessesPanel";
+import { ToastBridge } from "./components/ToastProvider";
+import { useDialog } from "./components/DialogProvider";
 import {
   Field,
   IconButton,
@@ -55,6 +71,7 @@ import {
 import { api, formatDate, getAuthToken, setAuthToken } from "./lib/api";
 import { createRealtimeVoice } from "./lib/realtimeVoice";
 import { loadMetaSdk, startWhatsAppEmbeddedSignup } from "./lib/metaSdk";
+import { applyThemeMode, getInitialThemeMode } from "./lib/theme";
 import { classNames } from "./utils/classNames";
 
 function InlineFormat({ text }) {
@@ -145,6 +162,8 @@ function ChatDiagnostics({ diagnostics }) {
 }
 
 export default function App() {
+  const dialog = useDialog();
+  const [themeMode, setThemeMode] = useState(getInitialThemeMode);
   const [currentUser, setCurrentUser] = useState(null);
   const [activeSection, setActiveSection] = useState("dashboard");
   const [loginForm, setLoginForm] = useState(emptyLoginForm);
@@ -155,11 +174,15 @@ export default function App() {
   const [restoreConfirmation, setRestoreConfirmation] = useState("");
   const [restoreStatus, setRestoreStatus] = useState(null);
   const [backupProgress, setBackupProgress] = useState(null);
-  const [health, setHealth] = useState(null);
   const [companies, setCompanies] = useState([]);
   const [selectedId, setSelectedId] = useState("");
   const [documents, setDocuments] = useState([]);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState([]);
+  const [documentSearchInput, setDocumentSearchInput] = useState("");
+  const [documentSearch, setDocumentSearch] = useState("");
+  const [documentStatus, setDocumentStatus] = useState("all");
+  const [documentPage, setDocumentPage] = useState(1);
+  const [documentPageSize, setDocumentPageSize] = useState(20);
   const [conversations, setConversations] = useState([]);
   const [conversationSearch, setConversationSearch] = useState("");
   const [selectedConversation, setSelectedConversation] = useState(null);
@@ -201,7 +224,6 @@ export default function App() {
     const [uploadProgress, setUploadProgress] = useState(null);
     const [reindexProgress, setReindexProgress] = useState(null);
   const [loading, setLoading] = useState({
-    health: false,
     companies: false,
     documents: false,
     download: false,
@@ -223,10 +245,80 @@ export default function App() {
     [companies, selectedId]
   );
   const isSuperAdmin = currentUser?.role === "superadmin";
+  const indexedDocumentCount = useMemo(
+    () => documents.filter((document) => document.status === "indexed").length,
+    [documents]
+  );
+  const totalDocumentChunks = useMemo(
+    () => documents.reduce((total, document) => total + Number(document.chunksIndexed || 0), 0),
+    [documents]
+  );
+  const filteredDocuments = useMemo(() => {
+    const term = documentSearch.trim().toLowerCase();
+    return documents.filter((document) => {
+      const matchesSearch = !term || String(document.originalName || "").toLowerCase().includes(term);
+      const matchesStatus = documentStatus === "all"
+        || (documentStatus === "inactive" ? !document.isActive : document.status === documentStatus);
+      return matchesSearch && matchesStatus;
+    });
+  }, [documentSearch, documentStatus, documents]);
+  const documentTotalPages = Math.max(1, Math.ceil(filteredDocuments.length / documentPageSize));
+  const visibleDocumentPage = Math.min(documentPage, documentTotalPages);
+  const paginatedDocuments = useMemo(
+    () => filteredDocuments.slice(
+      (visibleDocumentPage - 1) * documentPageSize,
+      visibleDocumentPage * documentPageSize
+    ),
+    [documentPageSize, filteredDocuments, visibleDocumentPage]
+  );
+  const documentPageButtons = Array.from(new Set([
+    1,
+    visibleDocumentPage - 1,
+    visibleDocumentPage,
+    visibleDocumentPage + 1,
+    documentTotalPages,
+  ])).filter((page) => page >= 1 && page <= documentTotalPages).sort((a, b) => a - b);
+  const visibleDocumentIds = paginatedDocuments.map((document) => document._id);
+  const allVisibleDocumentsSelected = visibleDocumentIds.length > 0
+    && visibleDocumentIds.every((documentId) => selectedDocumentIds.includes(documentId));
+  const firstDocumentShown = filteredDocuments.length
+    ? ((visibleDocumentPage - 1) * documentPageSize) + 1
+    : 0;
+  const lastDocumentShown = filteredDocuments.length
+    ? Math.min(visibleDocumentPage * documentPageSize, filteredDocuments.length)
+    : 0;
+
+  useEffect(() => {
+    if (documentPage > documentTotalPages) setDocumentPage(documentTotalPages);
+  }, [documentPage, documentTotalPages]);
+
+  useEffect(() => {
+    applyThemeMode(themeMode);
+  }, [themeMode]);
+
+  useEffect(() => {
+    if (!showWidgetPreview) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setShowWidgetPreview(false);
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [showWidgetPreview]);
+
   const navItems = isSuperAdmin
     ? [
         { id: "dashboard", label: "Dashboard", icon: Activity },
         { id: "companies", label: "Businesses", icon: Building2 },
+        { id: "billing", label: "Billing & credits", icon: Coins },
+        { id: "analytics", label: "Analytics", icon: BarChart3 },
+        { id: "support", label: "Support requests", icon: LifeBuoy },
         { id: "admins", label: "Team access", icon: Users },
         { id: "backups", label: "Backup & Restore", icon: Download },
       ]
@@ -237,11 +329,13 @@ export default function App() {
         { id: "whatsapp", label: "WhatsApp", icon: MessageSquare },
         { id: "messenger", label: "Messenger", icon: MessagesSquare },
         { id: "sms", label: "SMS", icon: MessageSquare },
+        { id: "help", label: "Website", icon: Globe2 },
         { id: "documents", label: "Knowledge base", icon: FileText },
+        { id: "chat", label: "Test assistant", icon: MessageSquare },
         { id: "history", label: "Conversations", icon: History },
         { id: "credits", label: "AI credits", icon: Coins },
         { id: "settings", label: "Business settings", icon: SlidersHorizontal },
-        { id: "help", label: "Website assistant", icon: Search },
+        { id: "support", label: "Contact support", icon: LifeBuoy },
       ];
   const companyDashboardNav = [
     { id: "dashboard", label: "Overview", icon: Activity },
@@ -250,12 +344,12 @@ export default function App() {
     { id: "whatsapp", label: "WhatsApp", icon: MessageSquare },
     { id: "messenger", label: "Messenger", icon: MessagesSquare },
     { id: "sms", label: "SMS", icon: MessageSquare },
+    { id: "help", label: "Website", icon: Globe2 },
     { id: "documents", label: "Knowledge base", icon: FileText },
     { id: "chat", label: "Test assistant", icon: MessageSquare },
     { id: "history", label: "Conversations", icon: History },
     { id: "credits", label: "AI credits", icon: Coins },
     { id: "settings", label: "Business settings", icon: SlidersHorizontal },
-    { id: "help", label: "Website assistant", icon: Search },
   ];
   const activeNavItems = isSuperAdmin && selectedCompany ? companyDashboardNav : navItems;
   const adminGroups = useMemo(() => {
@@ -303,11 +397,6 @@ export default function App() {
     } finally {
       setLoading((current) => ({ ...current, [key]: false }));
     }
-  }
-
-  async function loadHealth() {
-    const result = await runTask("health", () => api.health());
-    if (result) setHealth(result);
   }
 
   async function loadCompanies() {
@@ -377,7 +466,7 @@ export default function App() {
         isActive: integration?.isActive !== false,
       });
     } catch (err) {
-      if (String(err.message || "").toLowerCase().includes("not found")) {
+      if (err.status === 404) {
         setWhatsappIntegration(null);
         setWhatsappForm(emptyWhatsAppForm);
       } else {
@@ -410,7 +499,7 @@ export default function App() {
         isActive: integration?.isActive !== false,
       });
     } catch (err) {
-      if (String(err.message || "").toLowerCase().includes("not found")) {
+      if (err.status === 404) {
         setSmsIntegration(null);
         setSmsForm(emptySmsForm);
       } else {
@@ -428,7 +517,6 @@ export default function App() {
   }
 
   useEffect(() => {
-    loadHealth();
     async function restoreSession() {
       if (!getAuthToken()) {
         setAuthChecked(true);
@@ -518,6 +606,12 @@ export default function App() {
         senderName: selectedCompany.shippingDetails?.senderName || selectedCompany.name || "",
         senderPhone: selectedCompany.shippingDetails?.phone || "",
         senderAddress: selectedCompany.shippingDetails?.address || "",
+        welcomeMessageEn: selectedCompany.assistantSettings?.welcomeMessage?.en || "",
+        welcomeMessageSi: selectedCompany.assistantSettings?.welcomeMessage?.si || "",
+        welcomeMessageTa: selectedCompany.assistantSettings?.welcomeMessage?.ta || "",
+        supportPhone: selectedCompany.assistantSettings?.supportPhone || "",
+        supportWhatsApp: selectedCompany.assistantSettings?.supportWhatsApp || "",
+        businessHours: selectedCompany.assistantSettings?.businessHours || "",
       });
     }
   }, [selectedCompany, editingCompany]);
@@ -544,7 +638,7 @@ export default function App() {
   }
 
   async function handleUpdateCompany(event) {
-    event.preventDefault();
+    event?.preventDefault?.();
     if (!selectedCompany) return;
     const updated = await runTask(
       "companies",
@@ -556,6 +650,16 @@ export default function App() {
             senderName: companyForm.senderName.trim(),
             phone: companyForm.senderPhone.trim(),
             address: companyForm.senderAddress.trim(),
+          },
+          assistantSettings: {
+            welcomeMessage: {
+              en: companyForm.welcomeMessageEn.trim(),
+              si: companyForm.welcomeMessageSi.trim(),
+              ta: companyForm.welcomeMessageTa.trim(),
+            },
+            supportPhone: companyForm.supportPhone.trim(),
+            supportWhatsApp: companyForm.supportWhatsApp.trim(),
+            businessHours: companyForm.businessHours.trim(),
           },
           isActive: selectedCompany.isActive,
         }),
@@ -585,7 +689,7 @@ export default function App() {
   async function handleDeleteCompany() {
     if (!selectedCompany) return;
     if (!isSuperAdmin) return;
-    const ok = window.confirm(`Delete ${selectedCompany.name}?`);
+    const ok = await dialog.confirm({ title: "Delete business?", message: `Permanently delete ${selectedCompany.name} and its workspace data?`, confirmLabel: "Delete business", tone: "danger" });
     if (!ok) return;
     const result = await runTask(
       "companies",
@@ -755,7 +859,12 @@ function widgetBaseConfigLines(apiKey, companyName) {
 }
 
 function widgetScriptSrc() {
-  return `<script src="https://aichatbot.pentarixlabs.com/dist-widget/rag-chat-widget.iife.js"></script>`;
+  const configuredBaseUrl = String(import.meta.env.VITE_WIDGET_BASE_URL || "").trim();
+  const frontendBaseUrl = configuredBaseUrl
+    || (typeof window !== "undefined" ? window.location.origin : "");
+  const normalizedBaseUrl = frontendBaseUrl.replace(/\/+$/, "");
+  const scriptUrl = `${normalizedBaseUrl}/dist-widget/rag-chat-widget.iife.js`;
+  return `<script src=${jsString(scriptUrl)}></script>`;
 }
 
 function widgetSnippet() {
@@ -1024,7 +1133,7 @@ ${widgetScriptSrc()}`;
 
   async function handleDeleteWhatsAppIntegration() {
     if (!selectedCompany || !whatsappIntegration) return;
-    const ok = window.confirm("Delete this WhatsApp integration?");
+    const ok = await dialog.confirm({ title: "Delete WhatsApp integration?", message: "The connected phone will stop receiving automated replies from Pentarix.", confirmLabel: "Delete integration", tone: "danger" });
     if (!ok) return;
 
     const result = await runTask(
@@ -1104,7 +1213,7 @@ ${widgetScriptSrc()}`;
 
   async function handleDeleteSmsIntegration() {
     if (!selectedCompany || !smsIntegration) return;
-    const ok = window.confirm("Delete this SMS integration?");
+    const ok = await dialog.confirm({ title: "Delete SMS integration?", message: "Automated SMS support will stop for this company.", confirmLabel: "Delete integration", tone: "danger" });
     if (!ok) return;
 
     const result = await runTask(
@@ -1195,7 +1304,7 @@ ${widgetScriptSrc()}`;
   }
 
   async function handleDeleteDocument(documentId) {
-    const ok = window.confirm("Delete this document and vectors?");
+    const ok = await dialog.confirm({ title: "Delete knowledge document?", message: "This removes the PDF and all indexed vectors created from it.", confirmLabel: "Delete document", tone: "danger" });
     if (!ok) return;
     const result = await runTask(
       "documents",
@@ -1216,20 +1325,19 @@ ${widgetScriptSrc()}`;
     );
   }
 
-  function toggleAllDocuments() {
-    setSelectedDocumentIds((current) =>
-      current.length === documents.length
-        ? []
-        : documents.map((document) => document._id)
-    );
+  function toggleAllDocuments(documentIds = documents.map((document) => document._id)) {
+    setSelectedDocumentIds((current) => {
+      const allSelected = documentIds.length > 0 && documentIds.every((id) => current.includes(id));
+      return allSelected
+        ? current.filter((id) => !documentIds.includes(id))
+        : Array.from(new Set([...current, ...documentIds]));
+    });
   }
 
   async function handleBulkDeleteDocuments() {
     if (!selectedCompany || selectedDocumentIds.length === 0) return;
     const count = selectedDocumentIds.length;
-    const ok = window.confirm(
-      `Delete ${count} selected PDF${count === 1 ? "" : "s"} and their vectors?`
-    );
+    const ok = await dialog.confirm({ title: "Delete selected documents?", message: `Delete ${count} selected PDF${count === 1 ? "" : "s"} and their indexed vectors?`, confirmLabel: `Delete ${count} document${count === 1 ? "" : "s"}`, tone: "danger" });
     if (!ok) return;
     const result = await runTask(
       "documents",
@@ -1270,9 +1378,7 @@ ${widgetScriptSrc()}`;
 
   async function handleDeleteAllDocuments() {
     if (!selectedCompany || documents.length === 0) return;
-    const ok = window.confirm(
-      `Permanently delete all ${documents.length} PDFs for ${selectedCompany.name} and their vectors? This cannot be undone.`
-    );
+    const ok = await dialog.confirm({ title: "Delete all knowledge documents?", message: `Permanently delete all ${documents.length} PDFs for ${selectedCompany.name} and their indexed vectors? This cannot be undone.`, confirmLabel: "Delete everything", tone: "danger" });
     if (!ok) return;
     const result = await runTask(
       "documents",
@@ -1462,9 +1568,7 @@ ${widgetScriptSrc()}`;
 
   async function handleReindexAllDocuments() {
     if (!selectedCompany || documents.length === 0) return;
-    const ok = window.confirm(
-      `Reindex all ${documents.length} uploaded PDFs for ${selectedCompany.name}? They will be processed one by one and this may take several minutes.`
-    );
+    const ok = await dialog.confirm({ title: "Reindex all documents?", message: `Reindex all ${documents.length} uploaded PDFs for ${selectedCompany.name}? They will be processed one by one and may take several minutes.`, confirmLabel: "Start reindexing" });
     if (!ok) return;
 
     const result = await runTask(
@@ -1576,7 +1680,7 @@ ${widgetScriptSrc()}`;
   }
 
   async function handleDeleteAdmin(admin) {
-    const ok = window.confirm(`Delete admin ${admin.email}?`);
+    const ok = await dialog.confirm({ title: "Delete administrator?", message: `Remove ${admin.email} from Pentarix administration?`, confirmLabel: "Delete administrator", tone: "danger" });
     if (!ok) return;
     const result = await runTask("admins", () => api.adminUsers.remove(admin._id), "Admin user deleted");
     if (result) await loadAdminUsers();
@@ -1628,9 +1732,7 @@ ${widgetScriptSrc()}`;
       setError("Choose a backup ZIP first");
       return;
     }
-    const confirmed = window.confirm(
-      "Restore this backup? Current database records and uploaded PDFs will be replaced. Do not close this page while indexes rebuild."
-    );
+    const confirmed = await dialog.confirm({ title: "Restore platform backup?", message: "Current database records and uploaded PDFs will be replaced. Do not close this page while indexes rebuild.", confirmLabel: "Restore backup", tone: "danger" });
     if (!confirmed) return;
     const result = await runTask(
       "backupRestore",
@@ -1662,6 +1764,8 @@ ${widgetScriptSrc()}`;
         loading={loading}
         error={error}
         handleLogin={handleLogin}
+        themeMode={themeMode}
+        setThemeMode={setThemeMode}
       />
     );
   }
@@ -1669,31 +1773,36 @@ ${widgetScriptSrc()}`;
   return (
     <AdminShell
       currentUser={currentUser}
-      health={health}
-      loading={loading}
       activeNavItems={activeNavItems}
       activeSection={activeSection}
       setActiveSection={setActiveSection}
       isSuperAdmin={isSuperAdmin}
       selectedCompany={selectedCompany}
       backToSuperAdmin={backToSuperAdmin}
-      loadHealth={loadHealth}
       handleLogout={handleLogout}
+      themeMode={themeMode}
+      setThemeMode={setThemeMode}
     >
 
       {showCompanyModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-slate-950/40">
-          <section className="w-full max-w-lg overflow-hidden bg-white border shadow-2xl rounded-2xl border-slate-200">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-              <div className="flex items-center gap-2">
-                <Plus size={18} />
-                <h2 className="font-semibold text-slate-950">Add seller business</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4 py-6 backdrop-blur-sm">
+          <section className="w-full max-w-xl overflow-hidden rounded-3xl border border-emerald-100 bg-white shadow-2xl shadow-emerald-950/15">
+            <div className="relative overflow-hidden border-b border-emerald-100 bg-gradient-to-br from-white via-emerald-50/80 to-emerald-100/70 px-6 py-5">
+              <span className="pointer-events-none absolute -right-12 -top-16 h-40 w-40 rounded-full bg-emerald-200/40" />
+              <div className="relative flex items-start justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-200 bg-white/85 text-emerald-700 shadow-sm"><Building2 size={23} /></span>
+                  <div>
+                    <h2 className="text-lg font-black text-slate-950">Add seller business</h2>
+                    <p className="mt-1 text-sm text-slate-500">Create a secure workspace for a new company.</p>
+                  </div>
+                </div>
+                <IconButton title="Close" onClick={() => setShowCompanyModal(false)}>
+                  <XCircle size={17} />
+                </IconButton>
               </div>
-              <IconButton title="Close" onClick={() => setShowCompanyModal(false)}>
-                <XCircle size={16} />
-              </IconButton>
             </div>
-            <form className="p-4 space-y-3" onSubmit={handleCreateCompany}>
+            <form className="space-y-4 p-6" onSubmit={handleCreateCompany}>
               <Field label="Name">
                 <TextInput
                   value={companyForm.name}
@@ -1725,11 +1834,11 @@ ${widgetScriptSrc()}`;
                   placeholder="Customer support knowledge base"
                 />
               </Field>
-              <div className="flex justify-end gap-2 pt-2">
-                <SecondaryButton onClick={() => setShowCompanyModal(false)}>Cancel</SecondaryButton>
-                <PrimaryButton type="submit" disabled={loading.companies}>
+              <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end">
+                <SecondaryButton className="h-11 rounded-xl px-5" onClick={() => setShowCompanyModal(false)}>Cancel</SecondaryButton>
+                <PrimaryButton className="h-11 rounded-xl px-5" type="submit" disabled={loading.companies}>
                   {loading.companies ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
-                  Create
+                  Create business
                 </PrimaryButton>
               </div>
             </form>
@@ -1738,22 +1847,39 @@ ${widgetScriptSrc()}`;
       )}
 
       {showWidgetPreview && selectedCompany && widgetApiKeyInput.trim() && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 bg-slate-950/55">
-          <section className="flex h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded border border-slate-200 bg-white shadow-xl">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-950/60 p-3 backdrop-blur-[2px] sm:p-6"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setShowWidgetPreview(false);
+          }}
+          role="presentation"
+        >
+          <section
+            className="relative flex h-[min(88vh,820px)] max-h-[calc(100dvh-1.5rem)] min-h-0 w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="website-widget-preview-title"
+          >
+            <div className="relative z-40 flex shrink-0 items-center justify-between gap-4 border-b border-slate-200 bg-white px-4 py-3 sm:px-5">
               <div className="flex items-center gap-2">
                 <MessageSquare size={18} />
                 <div>
-                  <h2 className="font-semibold text-slate-950">Test Website Widget</h2>
+                  <h2 id="website-widget-preview-title" className="font-semibold text-slate-950">Test Website Widget</h2>
                   <p className="text-xs text-slate-500">This is how the chatbot opens on a customer website.</p>
                 </div>
               </div>
-              <IconButton title="Close" onClick={() => setShowWidgetPreview(false)}>
-                <XCircle size={16} />
-              </IconButton>
+              <button
+                type="button"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                title="Close preview"
+                aria-label="Close website widget preview"
+                onClick={() => setShowWidgetPreview(false)}
+              >
+                <XCircle size={21} />
+              </button>
             </div>
-            <div className="relative flex-1 min-h-0 p-6 bg-slate-100">
-              <div className="min-h-[460px] rounded border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="relative isolate min-h-0 flex-1 overflow-hidden bg-slate-100 p-3 sm:p-6">
+              <div className="h-full min-h-0 overflow-y-auto rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
                 <h1 className="text-2xl font-bold text-slate-950">{selectedCompany.name}</h1>
                 <p className="mt-2 text-sm text-slate-500">
                   Example customer website page. Click the floating chat button in the bottom-right corner.
@@ -1770,19 +1896,21 @@ ${widgetScriptSrc()}`;
                 </div>
               </div>
               {widgetPreviewOpen && (
-              <div className="absolute bottom-24 right-6 flex h-[560px] w-[380px] max-w-[calc(100%-48px)] flex-col overflow-hidden rounded border border-slate-200 bg-white shadow-2xl">
-                <div className="px-4 py-3 text-white" style={{ backgroundColor: widgetThemeForm.headerColor }}>
+              <div className="absolute inset-x-3 bottom-20 top-3 z-20 flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:bottom-24 sm:left-auto sm:right-6 sm:top-6 sm:w-[380px]">
+                <div className="shrink-0 px-4 py-3 text-white" style={{ backgroundColor: widgetThemeForm.headerColor }}>
                   <div className="flex items-center justify-between gap-3">
-                    <div>
+                    <div className="min-w-0">
                       <div className="text-sm font-bold">{selectedCompany.name} Support</div>
                       <div className="text-xs text-slate-300">Widget test mode</div>
                     </div>
                     <button
                       type="button"
-                      className="px-2 py-1 text-xs text-white border rounded border-white/20"
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/30 bg-white/10 text-white transition hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white/50"
                       onClick={() => setWidgetPreviewOpen(false)}
+                      title="Close chat panel"
+                      aria-label="Close chat panel"
                     >
-                      Close
+                      <XCircle size={18} />
                     </button>
                   </div>
                 </div>
@@ -1861,10 +1989,10 @@ ${widgetScriptSrc()}`;
               <button
                 type="button"
                 onClick={() => setWidgetPreviewOpen((value) => !value)}
-                className="absolute flex items-center justify-center w-16 h-16 text-white transition rounded-full shadow-2xl bottom-6 right-6"
+                className="absolute bottom-3 right-3 z-30 flex h-14 w-14 items-center justify-center rounded-full text-white shadow-2xl transition hover:scale-105 sm:bottom-6 sm:right-6 sm:h-16 sm:w-16"
                 style={{ backgroundColor: widgetThemeForm.launcherColor }}
-                title="Open chat"
-                aria-label="Open chat"
+                title={widgetPreviewOpen ? "Close chat" : "Open chat"}
+                aria-label={widgetPreviewOpen ? "Close chat" : "Open chat"}
               >
                 {renderLauncherIcon(25)}
               </button>
@@ -1874,114 +2002,8 @@ ${widgetScriptSrc()}`;
       )}
 
       <div className="grid grid-cols-1 gap-5">
-          {false && isSuperAdmin && !selectedCompany && activeSection === "companies" && (
-          <section className="bg-white border rounded border-slate-200">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-              <div className="flex items-center gap-2">
-                <Building2 size={18} />
-                <h2 className="font-semibold text-slate-950">Companies</h2>
-              </div>
-              <IconButton title="Refresh companies" onClick={loadCompanies}>
-                <RefreshCcw size={16} />
-              </IconButton>
-            </div>
-            <div className="max-h-[360px] overflow-y-auto p-2 scrollbar-thin">
-              {companies.length === 0 ? (
-                <p className="px-2 py-6 text-sm text-slate-500">No companies yet.</p>
-              ) : (
-                companies.map((company) => (
-                  <button
-                    type="button"
-                    key={company._id}
-                    onClick={() => openCompanyDashboard(company._id)}
-                    className={classNames(
-                      "mb-1 w-full rounded px-3 py-3 text-left transition",
-                      selectedId === company._id
-                        ? "bg-slate-900 text-white"
-                        : "text-slate-700 hover:bg-slate-100"
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="text-sm font-semibold">{company.name}</span>
-                      {company.isActive ? (
-                        <CheckCircle2 className="mt-0.5 shrink-0" size={15} />
-                      ) : (
-                        <XCircle className="mt-0.5 shrink-0" size={15} />
-                      )}
-                    </div>
-                    <div
-                      className={classNames(
-                        "mt-1 truncate text-xs",
-                        selectedId === company._id ? "text-slate-300" : "text-slate-500"
-                      )}
-                    >
-                      {company.slug}
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-          </section>
-          )}
-
-          {isSuperAdmin && !selectedCompany && activeSection === "companies" && (
-          <section className="p-4 bg-white border rounded border-slate-200">
-            <div className="flex items-center gap-2 mb-3">
-              <Plus size={18} />
-              <h2 className="font-semibold text-slate-950">New Company</h2>
-            </div>
-            <form className="space-y-3" onSubmit={handleCreateCompany}>
-              <Field label="Name">
-                <TextInput
-                  value={companyForm.name}
-                  onChange={(event) =>
-                    setCompanyForm((current) => ({ ...current, name: event.target.value }))
-                  }
-                  placeholder="Acme Support"
-                  required
-                />
-              </Field>
-              <Field label="Slug optional">
-                <TextInput
-                  value={companyForm.slug}
-                  onChange={(event) =>
-                    setCompanyForm((current) => ({ ...current, slug: event.target.value }))
-                  }
-                  placeholder="acme-support"
-                />
-              </Field>
-              <Field label="Description">
-                <TextArea
-                  value={companyForm.description}
-                  onChange={(event) =>
-                    setCompanyForm((current) => ({
-                      ...current,
-                      description: event.target.value,
-                    }))
-                  }
-                  placeholder="Customer support knowledge base"
-                />
-              </Field>
-              <PrimaryButton type="submit" className="w-full" disabled={loading.companies}>
-                {loading.companies ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
-                Create
-              </PrimaryButton>
-            </form>
-          </section>
-          )}
         <section className="space-y-5">
-          {(notice || error) && (
-            <div
-              className={classNames(
-                    "rounded-xl border px-4 py-3 text-sm shadow-sm",
-                error
-                  ? "border-rose-200 bg-rose-50 text-rose-700"
-                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
-              )}
-            >
-              {error || notice}
-            </div>
-          )}
+          <ToastBridge error={error} notice={notice} />
 
           {isSuperAdmin &&
           !selectedCompany &&
@@ -1989,128 +2011,25 @@ ${widgetScriptSrc()}`;
           activeSection !== "backups" ? (
             <>
               {activeSection === "dashboard" && (
-                <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                  <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-200">
-                    <div className="text-sm font-semibold text-slate-500">Seller businesses</div>
-                    <div className="mt-2 text-3xl font-bold tracking-tight text-slate-950">{companies.length}</div>
-                  </div>
-                  <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-200">
-                    <div className="text-sm font-semibold text-slate-500">Admins</div>
-                    <div className="mt-2 text-3xl font-bold tracking-tight text-slate-950">{adminUsers.length}</div>
-                  </div>
-                  <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-200">
-                    <div className="text-sm font-semibold text-slate-500">Platform health</div>
-                    <div className="mt-2"><StatusBadge status={health?.mongodb || "unknown"} /></div>
-                  </div>
-                  <div className="p-5 bg-white border shadow-sm rounded-2xl border-slate-200">
-                    <div className="text-sm font-semibold text-slate-500">Available AI credits</div>
-                    <div className="mt-2 text-3xl font-bold tracking-tight text-slate-950">
-                      {new Intl.NumberFormat().format(companies.reduce((sum, company) => sum + Number(company.tokenUsage?.wallet?.availableCredits || 0), 0))}
-                    </div>
-                  </div>
-                </section>
-              )}
-              {activeSection === "dashboard" && (
-                <section className="overflow-hidden bg-white border shadow-sm rounded-2xl border-slate-200">
-                  <div className="flex flex-col gap-3 px-4 py-3 border-b border-slate-200 md:flex-row md:items-center md:justify-between">
-                    <div className="flex items-center gap-2">
-                      <Building2 size={18} />
-                      <h2 className="font-semibold text-slate-950">Seller businesses</h2>
-                    </div>
-                    <SecondaryButton onClick={() => setActiveSection("companies")}>
-                      <Plus size={16} />
-                      Manage
-                    </SecondaryButton>
-                  </div>
-                  <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
-                    {companies.map((company) => (
-                      <button
-                        type="button"
-                        key={company._id}
-                        onClick={() => openCompanyDashboard(company._id)}
-                        className="p-4 text-left transition bg-white border rounded-xl border-slate-200 hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <div className="font-semibold text-slate-950">{company.name}</div>
-                            <div className="mt-1 text-sm text-slate-500">{company.slug}</div>
-                            <div className="mt-2 text-xs text-slate-500">
-                              {new Intl.NumberFormat().format(company.tokenUsage?.wallet?.availableCredits || 0)} credits available
-                            </div>
-                          </div>
-                          <StatusBadge status={company.isActive ? "active" : "inactive"} />
-                        </div>
-                        <p className="mt-3 text-sm line-clamp-2 text-slate-600">
-                          {company.description || "No description"}
-                        </p>
-                      </button>
-                    ))}
-                  </div>
-                </section>
+                <SuperAdminDashboard
+                  companies={companies}
+                  adminUsers={adminUsers}
+                  setActiveSection={setActiveSection}
+                  openCompanyDashboard={openCompanyDashboard}
+                />
               )}
               {activeSection === "companies" && (
-                <section className="overflow-hidden bg-white border shadow-sm rounded-2xl border-slate-200">
-                  <div className="flex flex-col gap-3 px-4 py-3 border-b border-slate-200 md:flex-row md:items-center md:justify-between">
-                    <div className="flex items-center gap-2">
-                      <Building2 size={18} />
-                      <h2 className="font-semibold text-slate-950">Seller businesses</h2>
-                    </div>
-                    <div className="flex gap-2">
-                      <IconButton title="Refresh companies" onClick={loadCompanies}>
-                        <RefreshCcw size={16} />
-                      </IconButton>
-                      <PrimaryButton onClick={() => setShowCompanyModal(true)}>
-                        <Plus size={16} />
-                        Add business
-                      </PrimaryButton>
-                    </div>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm divide-y divide-slate-200">
-                      <thead className="text-xs font-semibold tracking-wide text-left uppercase bg-slate-50 text-slate-500">
-                        <tr>
-                          <th className="px-4 py-3">Company</th>
-                          <th className="px-4 py-3">Slug</th>
-                          <th className="px-4 py-3">Status</th>
-                          <th className="px-4 py-3">Token usage</th>
-                          <th className="px-4 py-3">Created</th>
-                          <th className="px-4 py-3 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {companies.map((company) => (
-                          <tr key={company._id}>
-                            <td className="px-4 py-3">
-                              <div className="font-semibold text-slate-900">{company.name}</div>
-                              <div className="max-w-md text-xs truncate text-slate-500">
-                                {company.description || "No description"}
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-slate-600">{company.slug}</td>
-                            <td className="px-4 py-3">
-                              <StatusBadge status={company.isActive ? "active" : "inactive"} />
-                            </td>
-                            <td className="px-4 py-3 text-slate-600">
-                              <div className="font-semibold text-slate-800">{new Intl.NumberFormat().format(company.tokenUsage?.wallet?.availableCredits || 0)} credits</div>
-                              <div className="text-xs text-slate-400">
-                                {new Intl.NumberFormat().format(company.tokenUsage?.totalTokens || 0)} tokens used this month
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-slate-600">{formatDate(company.createdAt)}</td>
-                            <td className="px-4 py-3">
-                              <div className="flex justify-end">
-                                <SecondaryButton onClick={() => openCompanyDashboard(company._id)}>
-                                  Open
-                                </SecondaryButton>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
+                <BusinessesPanel
+                  companies={companies}
+                  loading={loading.companies}
+                  onRefresh={loadCompanies}
+                  onAdd={() => setShowCompanyModal(true)}
+                  onOpen={openCompanyDashboard}
+                />
               )}
+              {activeSection === "billing" && <GlobalBillingPanel />}
+              {activeSection === "analytics" && <GlobalAnalyticsPanel />}
+              {activeSection === "support" && <SupportRequestsPanel isSuperAdmin />}
             </>
           ) : !selectedCompany &&
             !(isSuperAdmin && ["admins", "backups"].includes(activeSection)) ? (
@@ -2137,21 +2056,32 @@ ${widgetScriptSrc()}`;
                 />
               )}
 
+              {activeSection === "support" && (
+                <SupportRequestsPanel company={selectedCompany} />
+              )}
+
               {["orders", "products", "messenger"].includes(activeSection) && (
                 <CommercePanel companyId={selectedCompany._id} company={selectedCompany} section={activeSection} />
               )}
 
               {(activeSection === "settings" || activeSection === "companies") && (
-              <section className="p-4 bg-white border rounded border-slate-200">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
+              <section className="space-y-5">
+                <div className="relative overflow-hidden rounded-2xl border border-emerald-200 bg-gradient-to-br from-white via-emerald-50/70 to-emerald-100/70 p-6 shadow-sm lg:p-8">
+                  <div className="pointer-events-none absolute -bottom-24 right-[-5%] h-52 w-[60%] rounded-[50%] bg-emerald-200/30 blur-2xl" />
+                  <div className="pointer-events-none absolute -right-20 -top-24 h-60 w-60 rounded-full bg-teal-100/70" />
+                  <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex min-w-0 items-center gap-5">
+                    <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl border border-emerald-200 bg-white/80 text-emerald-800 shadow-sm backdrop-blur">
+                      <Store size={38} strokeWidth={1.8} />
+                    </div>
+                    <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="text-2xl font-bold text-slate-950">{selectedCompany.name}</h2>
+                      <h2 className="text-2xl font-bold tracking-tight text-slate-950 lg:text-3xl">{selectedCompany.name}</h2>
                       <StatusBadge status={selectedCompany.isActive ? "active" : "inactive"} />
                     </div>
-                    <p className="mt-1 text-sm text-slate-500">{selectedCompany.description || "No description"}</p>
-                    <p className="mt-2 text-xs text-slate-400">ID: {selectedCompany._id}</p>
-                    <div className="p-3 mt-4 border rounded border-slate-200 bg-slate-50">
+                    <p className="mt-2 text-sm text-slate-600 lg:text-base">{selectedCompany.description || "No description added"}</p>
+                    <p className="mt-2 break-all text-xs font-medium text-slate-500">Company ID: {selectedCompany._id}</p>
+                    <div className="hidden">
                       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                         <div>
                           <div className="text-sm font-semibold text-slate-900">Widget API Key</div>
@@ -2328,12 +2258,28 @@ ${widgetScriptSrc()}`;
 
                       </div>
                     </div>
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <SecondaryButton onClick={() => setEditingCompany((value) => !value)}>
-                      <Pencil size={16} />
-                      Edit
-                    </SecondaryButton>
+                    {editingCompany ? (
+                      <>
+                        <PrimaryButton onClick={handleUpdateCompany} disabled={loading.companies}>
+                          {loading.companies ? (
+                            <Loader2 className="animate-spin" size={16} />
+                          ) : (
+                            <CheckCircle2 size={16} />
+                          )}
+                          Save changes
+                        </PrimaryButton>
+                        <SecondaryButton onClick={() => setEditingCompany(false)}>
+                          <XCircle size={16} /> Cancel
+                        </SecondaryButton>
+                      </>
+                    ) : (
+                      <PrimaryButton onClick={() => setEditingCompany(true)}>
+                        <Pencil size={16} /> Edit business
+                      </PrimaryButton>
+                    )}
                     <SecondaryButton onClick={handleToggleCompany}>
                       {selectedCompany.isActive ? <XCircle size={16} /> : <CheckCircle2 size={16} />}
                       {selectedCompany.isActive ? "Disable" : "Enable"}
@@ -2348,10 +2294,215 @@ ${widgetScriptSrc()}`;
                     </SecondaryButton>
                     )}
                   </div>
+                  </div>
                 </div>
 
-                {editingCompany && (
-                  <form className="grid gap-3 pt-4 mt-4 border-t border-slate-200 lg:grid-cols-2" onSubmit={handleUpdateCompany}>
+                <div className="grid gap-5 xl:grid-cols-2">
+                  <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-100 text-emerald-800">
+                        <Building2 size={22} />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-slate-950">Business profile</h3>
+                        <p className="text-xs text-slate-500">Core workspace identity and availability.</p>
+                      </div>
+                    </div>
+                    <dl className="divide-y divide-slate-100 px-5">
+                      <div className="grid gap-1 py-3 sm:grid-cols-[150px_minmax(0,1fr)]">
+                        <dt className="text-sm text-slate-500">Business name</dt>
+                        <dd className="text-sm font-semibold text-slate-900">
+                          {editingCompany ? (
+                            <TextInput
+                              value={companyForm.name}
+                              onChange={(event) =>
+                                setCompanyForm((current) => ({ ...current, name: event.target.value }))
+                              }
+                            />
+                          ) : selectedCompany.name}
+                        </dd>
+                      </div>
+                      <div className="grid gap-1 py-3 sm:grid-cols-[150px_minmax(0,1fr)]">
+                        <dt className="text-sm text-slate-500">Workspace slug</dt>
+                        <dd className="break-all text-sm font-medium text-slate-700">
+                          {editingCompany ? (
+                            <TextInput value={companyForm.slug} disabled title="The workspace slug cannot be changed here." />
+                          ) : (selectedCompany.slug || "Not configured")}
+                        </dd>
+                      </div>
+                      <div className="grid gap-1 py-3 sm:grid-cols-[150px_minmax(0,1fr)]">
+                        <dt className="text-sm text-slate-500">Description</dt>
+                        <dd className="text-sm font-medium text-slate-700">
+                          {editingCompany ? (
+                            <TextArea
+                              value={companyForm.description}
+                              onChange={(event) =>
+                                setCompanyForm((current) => ({ ...current, description: event.target.value }))
+                              }
+                              placeholder="Describe this business"
+                            />
+                          ) : (selectedCompany.description || "No description added")}
+                        </dd>
+                      </div>
+                      <div className="grid gap-1 py-3 sm:grid-cols-[150px_minmax(0,1fr)]">
+                        <dt className="text-sm text-slate-500">Company ID</dt>
+                        <dd className="break-all font-mono text-xs text-slate-600">{selectedCompany._id}</dd>
+                      </div>
+                      <div className="grid gap-1 py-3 sm:grid-cols-[150px_minmax(0,1fr)] sm:items-center">
+                        <dt className="text-sm text-slate-500">Status</dt>
+                        <dd><StatusBadge status={selectedCompany.isActive ? "active" : "inactive"} /></dd>
+                      </div>
+                    </dl>
+                  </article>
+
+                  <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-100 text-emerald-800">
+                          <Truck size={22} />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-slate-950">Parcel sender details</h3>
+                          <p className="text-xs text-slate-500">Printed in the FROM section of parcel labels.</p>
+                        </div>
+                      </div>
+                      {!editingCompany && (
+                        <SecondaryButton onClick={() => setEditingCompany(true)}>
+                          <Pencil size={15} /> Edit details
+                        </SecondaryButton>
+                      )}
+                    </div>
+                    <dl className="divide-y divide-slate-100 px-5">
+                      <div className="grid gap-1 py-4 sm:grid-cols-[170px_minmax(0,1fr)]">
+                        <dt className="text-sm text-slate-500">Sender / business name</dt>
+                        <dd className="text-sm font-semibold text-slate-900">
+                          {editingCompany ? (
+                            <TextInput
+                              value={companyForm.senderName}
+                              onChange={(event) =>
+                                setCompanyForm((current) => ({ ...current, senderName: event.target.value }))
+                              }
+                              placeholder={selectedCompany.name}
+                            />
+                          ) : (selectedCompany.shippingDetails?.senderName || selectedCompany.name)}
+                        </dd>
+                      </div>
+                      <div className="grid gap-1 py-4 sm:grid-cols-[170px_minmax(0,1fr)]">
+                        <dt className="text-sm text-slate-500">Sender phone</dt>
+                        <dd className="text-sm font-medium text-slate-700">
+                          {editingCompany ? (
+                            <TextInput
+                              value={companyForm.senderPhone}
+                              onChange={(event) =>
+                                setCompanyForm((current) => ({ ...current, senderPhone: event.target.value }))
+                              }
+                              placeholder="+94 77 123 4567"
+                            />
+                          ) : (selectedCompany.shippingDetails?.phone || "Not configured")}
+                        </dd>
+                      </div>
+                      <div className="grid gap-1 py-4 sm:grid-cols-[170px_minmax(0,1fr)]">
+                        <dt className="text-sm text-slate-500">Pickup / return address</dt>
+                        <dd className="whitespace-pre-wrap text-sm font-medium leading-6 text-slate-700">
+                          {editingCompany ? (
+                            <TextArea
+                              value={companyForm.senderAddress}
+                              onChange={(event) =>
+                                setCompanyForm((current) => ({ ...current, senderAddress: event.target.value }))
+                              }
+                              placeholder="Street, city and postal code"
+                            />
+                          ) : (selectedCompany.shippingDetails?.address || "Not configured")}
+                        </dd>
+                      </div>
+                    </dl>
+                  </article>
+                </div>
+
+                <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-100 text-emerald-800">
+                        <Bot size={22} />
+                      </div>
+                      <div>
+                        <h3 className="font-bold text-slate-950">Customer assistant</h3>
+                        <p className="text-xs text-slate-500">Welcome messages and human-support contact details used across customer channels.</p>
+                      </div>
+                    </div>
+                    {!editingCompany && (
+                      <SecondaryButton onClick={() => setEditingCompany(true)}>
+                        <Pencil size={15} /> Edit assistant
+                      </SecondaryButton>
+                    )}
+                  </div>
+
+                  <div className="grid gap-5 p-5 lg:grid-cols-3">
+                    <div className="lg:col-span-2">
+                      <div className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Welcome messages</div>
+                      <div className="space-y-4">
+                        {[
+                          ["English", "welcomeMessageEn", "en"],
+                          ["Sinhala", "welcomeMessageSi", "si"],
+                          ["Tamil", "welcomeMessageTa", "ta"],
+                        ].map(([label, field, language]) => (
+                          <div key={field} className="grid gap-2 sm:grid-cols-[100px_minmax(0,1fr)]">
+                            <div className="pt-2 text-sm font-semibold text-slate-600">{label}</div>
+                            {editingCompany ? (
+                              <TextArea
+                                value={companyForm[field]}
+                                onChange={(event) => setCompanyForm((current) => ({ ...current, [field]: event.target.value }))}
+                                placeholder={`Optional ${label} welcome message`}
+                              />
+                            ) : (
+                              <div className="min-h-16 whitespace-pre-wrap rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-3 text-sm leading-6 text-slate-700">
+                                {selectedCompany.assistantSettings?.welcomeMessage?.[language] || "Automatic friendly welcome using the business name and description"}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">Human support</div>
+                      <dl className="divide-y divide-slate-100 rounded-xl border border-slate-100 px-4">
+                        <div className="py-3">
+                          <dt className="mb-1 text-xs text-slate-500">Support phone</dt>
+                          <dd className="text-sm font-semibold text-slate-800">
+                            {editingCompany ? <TextInput value={companyForm.supportPhone} onChange={(event) => setCompanyForm((current) => ({ ...current, supportPhone: event.target.value }))} placeholder="+94 77 123 4567" /> : (selectedCompany.assistantSettings?.supportPhone || selectedCompany.shippingDetails?.phone || "Not configured")}
+                          </dd>
+                        </div>
+                        <div className="py-3">
+                          <dt className="mb-1 text-xs text-slate-500">WhatsApp contact</dt>
+                          <dd className="text-sm font-semibold text-slate-800">
+                            {editingCompany ? <TextInput value={companyForm.supportWhatsApp} onChange={(event) => setCompanyForm((current) => ({ ...current, supportWhatsApp: event.target.value }))} placeholder="+94 77 123 4567" /> : (selectedCompany.assistantSettings?.supportWhatsApp || "Not configured")}
+                          </dd>
+                        </div>
+                        <div className="py-3">
+                          <dt className="mb-1 text-xs text-slate-500">Business hours</dt>
+                          <dd className="text-sm font-semibold text-slate-800">
+                            {editingCompany ? <TextInput value={companyForm.businessHours} onChange={(event) => setCompanyForm((current) => ({ ...current, businessHours: event.target.value }))} placeholder="Mon–Sat, 9:00 AM–6:00 PM" /> : (selectedCompany.assistantSettings?.businessHours || "Not configured")}
+                          </dd>
+                        </div>
+                      </dl>
+                    </div>
+                  </div>
+                </article>
+
+                <div className="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-emerald-950">
+                  <Info className="mt-0.5 shrink-0 text-emerald-700" size={20} />
+                  <p className="text-sm leading-6">
+                    Parcel sender details appear on shipping labels for your orders, including the sender name, phone number, and pickup or return address.
+                  </p>
+                </div>
+
+                {false && editingCompany && (
+                  <form className="grid gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:grid-cols-2 lg:p-6" onSubmit={handleUpdateCompany}>
+                    <div className="lg:col-span-2">
+                      <h3 className="text-lg font-bold text-slate-950">Edit business settings</h3>
+                      <p className="mt-1 text-sm text-slate-500">Update the profile and sender details used throughout this workspace.</p>
+                    </div>
                     <Field label="Name">
                       <TextInput
                         value={companyForm.name}
@@ -3041,11 +3192,96 @@ ${widgetScriptSrc()}`;
                 activeSection === "chat" ? "xl:grid-cols-[420px_minmax(0,1fr)]" : "xl:grid-cols-1"
               )}>
                 {activeSection === "documents" && (
-                <section className="bg-white border rounded border-slate-200">
-                  <div className="flex flex-col gap-3 px-4 py-3 border-b border-slate-200 md:flex-row md:items-center md:justify-between">
-                    <div className="flex items-center gap-2">
-                      <FileText size={18} />
-                      <h2 className="font-semibold text-slate-950">Documents</h2>
+                <div className="knowledge-base-page space-y-5">
+                  <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    <article className="knowledge-stat-card relative overflow-hidden rounded-2xl border border-emerald-200 bg-gradient-to-br from-white via-emerald-50 to-emerald-100/70 p-5 shadow-sm">
+                      <div className="absolute -bottom-12 -right-8 h-28 w-28 rounded-full bg-emerald-200/35" />
+                      <div className="relative flex items-center gap-4">
+                        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700"><FileText size={24} /></span>
+                        <div><p className="text-sm font-bold text-slate-700">Total Documents</p><p className="mt-1 text-3xl font-black text-emerald-800">{documents.length}</p></div>
+                      </div>
+                    </article>
+                    <article className="knowledge-stat-card relative overflow-hidden rounded-2xl border border-blue-200 bg-gradient-to-br from-white via-blue-50 to-blue-100/70 p-5 shadow-sm">
+                      <div className="absolute -bottom-12 -right-8 h-28 w-28 rounded-full bg-blue-200/35" />
+                      <div className="relative flex items-center gap-4">
+                        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700"><CheckCircle2 size={24} /></span>
+                        <div><p className="text-sm font-bold text-slate-700">Indexed</p><p className="mt-1 text-3xl font-black text-blue-800">{indexedDocumentCount}</p></div>
+                      </div>
+                    </article>
+                    <article className="knowledge-stat-card relative overflow-hidden rounded-2xl border border-violet-200 bg-gradient-to-br from-white via-violet-50 to-violet-100/70 p-5 shadow-sm">
+                      <div className="absolute -bottom-12 -right-8 h-28 w-28 rounded-full bg-violet-200/35" />
+                      <div className="relative flex items-center gap-4">
+                        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700"><Package size={24} /></span>
+                        <div><p className="text-sm font-bold text-slate-700">Total Chunks</p><p className="mt-1 text-3xl font-black text-violet-800">{totalDocumentChunks}</p></div>
+                      </div>
+                    </article>
+                    <article className="knowledge-stat-card relative overflow-hidden rounded-2xl border border-amber-200 bg-gradient-to-br from-white via-amber-50 to-amber-100/70 p-5 shadow-sm">
+                      <div className="absolute -bottom-12 -right-8 h-28 w-28 rounded-full bg-amber-200/35" />
+                      <div className="relative flex items-center gap-4">
+                        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700"><Activity size={24} /></span>
+                        <div><p className="text-sm font-bold text-slate-700">Knowledge Status</p><p className="mt-1 text-2xl font-black text-amber-800">{documents.length > 0 && indexedDocumentCount === documents.length ? "Ready" : "Needs attention"}</p></div>
+                      </div>
+                    </article>
+                  </section>
+
+                  <section className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
+                    <form
+                      className="grid gap-3 lg:grid-cols-[minmax(280px,1fr)_220px_auto_auto_auto]"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        setDocumentSearch(documentSearchInput);
+                        setDocumentPage(1);
+                      }}
+                    >
+                      <label className="relative block">
+                        <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={19} />
+                        <input
+                          value={documentSearchInput}
+                          onChange={(event) => setDocumentSearchInput(event.target.value)}
+                          className="h-12 w-full rounded-xl border border-slate-200 bg-white pl-11 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10"
+                          placeholder="Search documents"
+                        />
+                      </label>
+                      <select
+                        value={documentStatus}
+                        onChange={(event) => { setDocumentStatus(event.target.value); setDocumentPage(1); }}
+                        className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10"
+                        aria-label="Document status"
+                      >
+                        <option value="all">All Statuses</option>
+                        <option value="indexed">Indexed</option>
+                        <option value="indexing">Indexing</option>
+                        <option value="pending">Pending</option>
+                        <option value="failed">Failed</option>
+                        <option value="inactive">Inactive</option>
+                      </select>
+                      <button type="submit" className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-6 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-800">
+                        <Search size={18} /> Search
+                      </button>
+                      <label className={classNames(
+                        "inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 shadow-sm transition",
+                        loading.upload ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:border-emerald-300 hover:bg-emerald-50"
+                      )}>
+                        {loading.upload ? <Loader2 className="animate-spin" size={17} /> : <Upload size={17} />}
+                        Upload folder
+                        <input type="file" accept="application/pdf" multiple className="sr-only" onChange={handleUpload} disabled={loading.upload} directory="" webkitdirectory="" />
+                      </label>
+                      <label className={classNames(
+                        "inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 text-sm font-bold text-white shadow-sm transition",
+                        loading.upload ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:bg-emerald-800"
+                      )}>
+                        {loading.upload ? <Loader2 className="animate-spin" size={17} /> : <Upload size={17} />}
+                        Upload PDFs
+                        <input type="file" accept="application/pdf" multiple className="sr-only" onChange={handleUpload} disabled={loading.upload} />
+                      </label>
+                    </form>
+                  </section>
+
+                <section className="overflow-hidden rounded-2xl border border-emerald-100 bg-white shadow-sm">
+                  <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 md:flex-row md:items-center md:justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700"><FileText size={20} /></span>
+                      <div><h2 className="font-bold text-slate-950">Documents</h2><p className="mt-0.5 text-xs text-slate-500">{documents.length} trusted file{documents.length === 1 ? "" : "s"} in your knowledge base</p></div>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {documents.length > 0 && (
@@ -3053,7 +3289,7 @@ ${widgetScriptSrc()}`;
                           type="button"
                           onClick={handleReindexAllDocuments}
                           disabled={loading.reindexAll || loading.documents}
-                          className="inline-flex items-center justify-center gap-2 px-3 text-sm font-semibold transition bg-white border rounded shadow-sm h-9 border-slate-200 text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {loading.reindexAll
                             ? <Loader2 className="animate-spin" size={16} />
@@ -3066,7 +3302,7 @@ ${widgetScriptSrc()}`;
                           type="button"
                           onClick={handleDeleteAllDocuments}
                           disabled={loading.documents}
-                          className="inline-flex items-center justify-center gap-2 px-3 text-sm font-semibold transition bg-white border rounded shadow-sm h-9 border-rose-300 text-rose-800 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-rose-300 bg-white px-4 text-sm font-bold text-rose-700 shadow-sm transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           <Trash2 size={16} />
                           Delete all ({documents.length})
@@ -3077,7 +3313,7 @@ ${widgetScriptSrc()}`;
                           type="button"
                           onClick={handleBulkReindexDocuments}
                           disabled={loading.documents}
-                          className="inline-flex items-center justify-center gap-2 px-3 text-sm font-semibold transition bg-white border rounded shadow-sm h-9 border-slate-200 text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           <RefreshCcw size={16} />
                           Reindex selected ({selectedDocumentIds.length})
@@ -3088,7 +3324,7 @@ ${widgetScriptSrc()}`;
                           type="button"
                           onClick={handleBulkDownloadDocuments}
                           disabled={loading.download}
-                          className="inline-flex items-center justify-center gap-2 px-3 text-sm font-semibold transition bg-white border rounded shadow-sm h-9 border-slate-200 text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {loading.download ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}
                           Download selected ({selectedDocumentIds.length})
@@ -3099,7 +3335,7 @@ ${widgetScriptSrc()}`;
                           type="button"
                           onClick={handleBulkDeleteDocuments}
                           disabled={loading.documents}
-                          className="inline-flex items-center justify-center gap-2 px-3 text-sm font-semibold transition bg-white border rounded shadow-sm h-9 border-rose-200 text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-white px-4 text-sm font-bold text-rose-700 shadow-sm transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           <Trash2 size={16} />
                           Delete selected ({selectedDocumentIds.length})
@@ -3108,38 +3344,6 @@ ${widgetScriptSrc()}`;
                       <IconButton title="Refresh documents" onClick={() => loadDocuments()}>
                         <RefreshCcw size={16} />
                       </IconButton>
-                      <label className={classNames(
-                        "inline-flex items-center justify-center gap-2 px-3 text-sm font-semibold text-white transition rounded shadow-sm h-9 bg-slate-900",
-                        loading.upload ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:bg-slate-800"
-                      )}>
-                        {loading.upload ? <Loader2 className="animate-spin" size={16} /> : <Upload size={16} />}
-                        {loading.upload ? "Uploading..." : "Upload PDFs"}
-                        <input
-                          type="file"
-                          accept="application/pdf"
-                          multiple
-                          className="sr-only"
-                          onChange={handleUpload}
-                          disabled={loading.upload}
-                        />
-                      </label>
-                      <label className={classNames(
-                        "inline-flex items-center justify-center gap-2 px-3 text-sm font-semibold transition bg-white border rounded shadow-sm h-9 border-slate-200 text-slate-700 shadow-slate-200/70",
-                        loading.upload ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:bg-slate-50 hover:border-slate-300"
-                      )}>
-                        {loading.upload ? <Loader2 className="animate-spin" size={16} /> : <Upload size={16} />}
-                        {loading.upload ? "Uploading..." : "Upload folder"}
-                        <input
-                          type="file"
-                          accept="application/pdf"
-                          multiple
-                          className="sr-only"
-                          onChange={handleUpload}
-                          disabled={loading.upload}
-                          directory=""
-                          webkitdirectory=""
-                        />
-                      </label>
                     </div>
                   </div>
                   {reindexProgress && (
@@ -3180,64 +3384,73 @@ ${widgetScriptSrc()}`;
                       </div>
                     </div>
                   )}
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm divide-y divide-slate-200">
-                      <thead className="text-xs font-semibold tracking-wide text-left uppercase bg-slate-50 text-slate-500">
+                  <div className="max-h-[58vh] overflow-auto overscroll-contain">
+                    <table className="min-w-[980px] w-full text-sm">
+                      <thead className="sticky top-0 z-10 bg-emerald-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_rgba(148,163,184,0.25)]">
                         <tr>
-                          <th className="w-12 px-4 py-3">
+                          <th className="w-12 px-5 py-3">
                             <input
                               type="checkbox"
-                              aria-label="Select all documents"
-                              checked={documents.length > 0 && selectedDocumentIds.length === documents.length}
-                              onChange={toggleAllDocuments}
-                              className="w-4 h-4 rounded border-slate-300"
+                              aria-label="Select all documents on this page"
+                              checked={allVisibleDocumentsSelected}
+                              onChange={() => toggleAllDocuments(visibleDocumentIds)}
+                              className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                             />
                           </th>
-                          <th className="w-16 px-4 py-3">No.</th>
-                          <th className="px-4 py-3">File</th>
-                          <th className="px-4 py-3">Status</th>
-                          <th className="px-4 py-3">Chunks</th>
-                          <th className="px-4 py-3">Updated</th>
-                          <th className="px-4 py-3 text-right">Actions</th>
+                          <th className="w-16 px-5 py-3">No.</th>
+                          <th className="px-5 py-3">File</th>
+                          <th className="px-5 py-3">Status</th>
+                          <th className="px-5 py-3">Chunks</th>
+                          <th className="px-5 py-3">Updated</th>
+                          <th className="px-5 py-3 text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {documents.length === 0 ? (
+                        {paginatedDocuments.length === 0 ? (
                           <tr>
-                            <td className="px-4 py-8 text-center text-slate-500" colSpan={7}>
-                              No documents uploaded.
+                            <td className="px-5 py-12 text-center text-slate-500" colSpan={7}>
+                              {documents.length === 0 ? "No documents uploaded." : "No documents match your search and status filters."}
                             </td>
                           </tr>
                         ) : (
-                          documents.map((document, index) => (
-                            <tr key={document._id}>
-                              <td className="w-12 px-4 py-3">
+                          paginatedDocuments.map((document, index) => (
+                            <tr key={document._id} className="transition hover:bg-emerald-50/35">
+                              <td className="w-12 px-5 py-4">
                                 <input
                                   type="checkbox"
                                   aria-label={`Select ${document.originalName}`}
                                   checked={selectedDocumentIds.includes(document._id)}
                                   onChange={() => toggleDocumentSelection(document._id)}
-                                  className="w-4 h-4 rounded border-slate-300"
+                                  className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                                 />
                               </td>
-                              <td className="w-16 px-4 py-3 font-medium tabular-nums text-slate-500">{index + 1}</td>
-                              <td className="max-w-[320px] px-4 py-3">
-                                <div className="font-medium truncate text-slate-900">{document.originalName}</div>
-                                <div className="mt-1 text-xs text-slate-500">
-                                  Version {document.documentVersion || "1"}
+                              <td className="w-16 px-5 py-4 font-semibold tabular-nums text-slate-500">{firstDocumentShown + index}</td>
+                              <td className="max-w-[390px] px-5 py-4">
+                                <div className="flex min-w-0 items-start gap-3">
+                                  <span className="relative flex h-11 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600 ring-1 ring-rose-100">
+                                    <FileText size={21} />
+                                    <span className="absolute -bottom-1 -right-1 rounded bg-rose-600 px-1 text-[8px] font-black leading-4 text-white">PDF</span>
+                                  </span>
+                                  <div className="min-w-0">
+                                    <div className="truncate font-bold text-slate-900">{document.originalName}</div>
+                                    <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+                                      <span className="rounded-full bg-slate-100 px-2 py-0.5 font-bold">PDF</span>
+                                      <span>Version {document.documentVersion || "1"}</span>
+                                    </div>
+                                  </div>
                                 </div>
                                 {document.duplicateOf && (
-                                  <div className="mt-1 text-xs text-amber-700">Exact duplicate</div>
+                                  <div className="mt-2 text-xs text-amber-700">Exact duplicate</div>
                                 )}
                                 {document.indexError && (
-                                  <div className="mt-1 text-xs truncate text-rose-600">{document.indexError}</div>
+                                  <div className="mt-2 truncate text-xs text-rose-600">{document.indexError}</div>
                                 )}
                               </td>
-                              <td className="px-4 py-3">
-                                <div className="flex flex-wrap gap-1">
+                              <td className="px-5 py-4">
+                                <div className="flex flex-wrap gap-2">
                                   <StatusBadge status={document.status} />
                                   <span className={classNames(
-                                    "rounded-full px-2 py-0.5 text-xs font-medium",
+                                    "rounded-full px-2.5 py-1 text-xs font-bold capitalize",
                                     document.isActive
                                       ? "bg-emerald-100 text-emerald-700"
                                       : "bg-slate-100 text-slate-500"
@@ -3246,9 +3459,9 @@ ${widgetScriptSrc()}`;
                                   </span>
                                 </div>
                               </td>
-                              <td className="px-4 py-3 text-slate-600">{document.chunksIndexed || 0}</td>
-                              <td className="px-4 py-3 text-slate-600">{formatDate(document.updatedAt)}</td>
-                              <td className="px-4 py-3">
+                              <td className="px-5 py-4 font-semibold text-slate-600">{document.chunksIndexed || 0}</td>
+                              <td className="whitespace-nowrap px-5 py-4 text-slate-600">{formatDate(document.updatedAt)}</td>
+                              <td className="px-5 py-4">
                                 <div className="flex justify-end gap-2">
                                   <IconButton
                                     title={document.isActive ? "Deactivate version" : "Activate version"}
@@ -3274,7 +3487,60 @@ ${widgetScriptSrc()}`;
                       </tbody>
                     </table>
                   </div>
+                  <div className="flex flex-col gap-3 border-t border-slate-100 bg-white px-5 py-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-wrap items-center gap-3 text-slate-500">
+                      <span>Showing <strong className="text-slate-800">{firstDocumentShown}–{lastDocumentShown}</strong> of <strong className="text-slate-800">{filteredDocuments.length}</strong> documents</span>
+                      <label className="flex items-center gap-2">
+                        <span>Rows per page</span>
+                        <select
+                          value={documentPageSize}
+                          onChange={(event) => { setDocumentPageSize(Number(event.target.value)); setDocumentPage(1); }}
+                          className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10"
+                        >
+                          <option value={20}>20</option>
+                          <option value={50}>50</option>
+                        </select>
+                      </label>
+                    </div>
+                    <nav className="flex flex-wrap items-center gap-1.5" aria-label="Knowledge base pagination">
+                      <button
+                        type="button"
+                        disabled={visibleDocumentPage <= 1}
+                        onClick={() => setDocumentPage((page) => Math.max(1, page - 1))}
+                        className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        <ChevronLeft size={16} /> Previous
+                      </button>
+                      {documentPageButtons.map((page, index) => (
+                        <Fragment key={page}>
+                          {index > 0 && page - documentPageButtons[index - 1] > 1 && <span className="px-1 text-slate-400">…</span>}
+                          <button
+                            type="button"
+                            aria-current={page === visibleDocumentPage ? "page" : undefined}
+                            onClick={() => setDocumentPage(page)}
+                            className={classNames(
+                              "h-9 min-w-9 rounded-lg border px-3 font-bold transition",
+                              page === visibleDocumentPage
+                                ? "border-emerald-700 bg-emerald-700 text-white shadow-sm"
+                                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                            )}
+                          >
+                            {page}
+                          </button>
+                        </Fragment>
+                      ))}
+                      <button
+                        type="button"
+                        disabled={visibleDocumentPage >= documentTotalPages}
+                        onClick={() => setDocumentPage((page) => Math.min(documentTotalPages, page + 1))}
+                        className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        Next <ChevronRight size={16} />
+                      </button>
+                    </nav>
+                  </div>
                 </section>
+                </div>
                 )}
 
                 {isSuperAdmin && activeSection === "chat" && (
@@ -3423,6 +3689,21 @@ ${widgetScriptSrc()}`;
               )}
 
               {activeSection === "history" && (
+                <ConversationsPanel
+                  companyId={selectedCompany._id}
+                  conversations={conversations}
+                  selectedConversation={selectedConversation}
+                  conversationSearch={conversationSearch}
+                  setConversationSearch={setConversationSearch}
+                  loading={loading.conversations}
+                  onSearch={handleConversationSearch}
+                  onClearSearch={clearConversationSearch}
+                  onRefresh={() => loadConversations()}
+                  onOpenConversation={handleOpenConversation}
+                />
+              )}
+
+              {false && activeSection === "history" && (
               <section className="bg-white border rounded border-slate-200">
                 <div className="flex flex-col gap-3 px-4 py-3 border-b border-slate-200 lg:flex-row lg:items-center lg:justify-between">
                   <div className="flex items-center gap-2">
@@ -3536,7 +3817,7 @@ ${widgetScriptSrc()}`;
                       <Search size={18} />
                       <div>
                         <div className="flex items-center gap-2">
-                          <h2 className="font-semibold text-slate-950">Website Assistant</h2>
+                          <h2 className="font-semibold text-slate-950">Website</h2>
                           <StatusBadge status={selectedCompany.widgetApiKeyPreview ? "connected" : "inactive"} />
                         </div>
                         <p className="text-xs text-slate-500">Install, customize and test the customer website chatbot.</p>
@@ -3618,11 +3899,102 @@ ${widgetScriptSrc()}`;
                           <li className="flex gap-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">2</span><span>Paste it immediately before the website's closing <code>&lt;/body&gt;</code> tag.</span></li>
                           <li className="flex gap-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">3</span><span>Publish the website and send a real test message from the floating chat button.</span></li>
                         </ol>
-                        {api.baseUrl.includes("localhost") && (
-                          <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
-                            The generated code currently uses localhost. Deploy the backend and set VITE_API_BASE_URL before copying production embed code.
-                          </p>
-                        )}
+                      </div>
+
+                      <div className="rounded-xl border border-slate-200 bg-white p-5">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                          <div>
+                            <h3 className="font-semibold text-slate-950">Widget theme</h3>
+                            <p className="mt-1 text-sm leading-6 text-slate-500">
+                              Match the assistant to the customer website using the header, action and launcher controls.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <SecondaryButton onClick={handleResetWidgetTheme}>Reset</SecondaryButton>
+                            <PrimaryButton onClick={handleSaveWidgetTheme} disabled={loading.companies}>
+                              {loading.companies ? (
+                                <Loader2 className="animate-spin" size={16} />
+                              ) : (
+                                <CheckCircle2 size={16} />
+                              )}
+                              Save theme
+                            </PrimaryButton>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                          <Field label="Header color">
+                            <input
+                              type="color"
+                              className="h-11 w-full rounded-lg border border-slate-200 bg-white p-1"
+                              value={widgetThemeForm.headerColor}
+                              onChange={(event) =>
+                                setWidgetThemeForm((current) => ({
+                                  ...current,
+                                  headerColor: event.target.value,
+                                }))
+                              }
+                            />
+                          </Field>
+                          <Field label="Send button color">
+                            <input
+                              type="color"
+                              className="h-11 w-full rounded-lg border border-slate-200 bg-white p-1"
+                              value={widgetThemeForm.sendButtonColor}
+                              onChange={(event) =>
+                                setWidgetThemeForm((current) => ({
+                                  ...current,
+                                  sendButtonColor: event.target.value,
+                                }))
+                              }
+                            />
+                          </Field>
+                          <Field label="Launcher color">
+                            <input
+                              type="color"
+                              className="h-11 w-full rounded-lg border border-slate-200 bg-white p-1"
+                              value={widgetThemeForm.launcherColor}
+                              onChange={(event) =>
+                                setWidgetThemeForm((current) => ({
+                                  ...current,
+                                  launcherColor: event.target.value,
+                                }))
+                              }
+                            />
+                          </Field>
+                        </div>
+
+                        <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_140px] sm:items-end">
+                          <Field label="Launcher icon">
+                            <select
+                              className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                              value={widgetThemeForm.launcherIcon}
+                              onChange={(event) =>
+                                setWidgetThemeForm((current) => ({
+                                  ...current,
+                                  launcherIcon: event.target.value,
+                                }))
+                              }
+                            >
+                              {widgetLauncherIconOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </Field>
+                          <div>
+                            <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Preview
+                            </span>
+                            <div
+                              className="flex h-11 w-11 items-center justify-center rounded-full text-white shadow-lg"
+                              style={{ backgroundColor: widgetThemeForm.launcherColor }}
+                            >
+                              {renderLauncherIcon(20)}
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                     <div className="space-y-4">
@@ -3662,7 +4034,7 @@ ${widgetScriptSrc()}`;
                         )}
                       </div>
                       <div>
-                        <div className="mb-2 flex items-center justify-between gap-3">
+                        <div className="mb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <span className="text-xs font-semibold tracking-wide uppercase text-slate-500">Visual Preview</span>
                           <SecondaryButton
                             onClick={() => {
@@ -3674,17 +4046,17 @@ ${widgetScriptSrc()}`;
                             <MessageSquare size={15} /> Open interactive test
                           </SecondaryButton>
                         </div>
-                        <div className="relative h-[360px] overflow-hidden rounded border border-slate-200 bg-slate-100 p-4">
-                          <div className="p-4 bg-white border rounded border-slate-200">
+                        <div className="relative h-[440px] overflow-hidden rounded-xl border border-slate-200 bg-slate-100 p-4">
+                          <div className="relative z-10 rounded-lg border border-slate-200 bg-white p-4 pr-16">
                             <h3 className="text-lg font-bold text-slate-950">{selectedCompany.name}</h3>
                             <p className="mt-1 text-sm text-slate-500">Customer website page</p>
                           </div>
-                          <div className="absolute bottom-20 right-4 flex h-[220px] w-[250px] flex-col overflow-hidden rounded border border-slate-200 bg-white shadow-xl">
-                            <div className="px-3 py-2 text-white" style={{ backgroundColor: widgetThemeForm.headerColor }}>
-                              <div className="text-xs font-bold">{selectedCompany.name} Support</div>
+                          <div className="absolute inset-x-4 bottom-20 top-28 z-20 flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl sm:left-auto sm:w-[280px]">
+                            <div className="shrink-0 px-3 py-2 text-white" style={{ backgroundColor: widgetThemeForm.headerColor }}>
+                              <div className="truncate text-xs font-bold">{selectedCompany.name} Support</div>
                               <div className="text-[11px] text-slate-300">Chat widget panel</div>
                             </div>
-                            <div className="flex-1 p-3 space-y-2 bg-slate-50">
+                            <div className="min-h-0 flex-1 space-y-2 overflow-hidden bg-slate-50 p-3">
                               <div className="max-w-[85%] rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700">
                                 Hi, how can I help?
                               </div>
@@ -3692,13 +4064,13 @@ ${widgetScriptSrc()}`;
                                 Ask a question
                               </div>
                             </div>
-                            <div className="p-2 border-t border-slate-200">
-                              <div className="h-8 px-2 text-xs leading-8 bg-white border rounded border-slate-200 text-slate-400">
+                            <div className="shrink-0 border-t border-slate-200 p-2">
+                              <div className="h-8 truncate rounded border border-slate-200 bg-white px-2 text-xs leading-8 text-slate-400">
                                 Type your question
                               </div>
                             </div>
                           </div>
-                          <div className="absolute flex items-center justify-center text-white rounded-full shadow-xl bottom-4 right-4 h-14 w-14" style={{ backgroundColor: widgetThemeForm.launcherColor }}>
+                          <div className="absolute bottom-4 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full text-white shadow-xl" style={{ backgroundColor: widgetThemeForm.launcherColor }}>
                             {renderLauncherIcon(22)}
                           </div>
                         </div>

@@ -5,6 +5,7 @@ const TokenUsage = require("../models/TokenUsage");
 const TokenWallet = require("../models/TokenWallet");
 const CreditTransaction = require("../models/CreditTransaction");
 const UsageReceipt = require("../models/UsageReceipt");
+const CreditPurchaseRequest = require("../models/CreditPurchaseRequest");
 const { requireSuperAdmin, canAccessCompany } = require("../middleware/auth");
 const { addCredits, getTokenUsage, listTransactions } = require("../services/tokenUsage");
 
@@ -148,6 +149,7 @@ router.put("/:id", canAccessCompany, async (req, res) => {
       isActive,
       widgetTheme,
       shippingDetails,
+      assistantSettings,
       monthlyTokenLimit,
     } = req.body;
 
@@ -171,6 +173,19 @@ router.put("/:id", canAccessCompany, async (req, res) => {
         senderName: String(shippingDetails.senderName || "").trim(),
         phone: String(shippingDetails.phone || "").trim(),
         address: String(shippingDetails.address || "").trim(),
+      };
+    }
+    if (assistantSettings && typeof assistantSettings === "object") {
+      const welcome = assistantSettings.welcomeMessage || {};
+      company.assistantSettings = {
+        welcomeMessage: {
+          en: String(welcome.en || "").trim().slice(0, 1200),
+          si: String(welcome.si || "").trim().slice(0, 1200),
+          ta: String(welcome.ta || "").trim().slice(0, 1200),
+        },
+        supportPhone: String(assistantSettings.supportPhone || "").trim().slice(0, 80),
+        supportWhatsApp: String(assistantSettings.supportWhatsApp || "").trim().slice(0, 80),
+        businessHours: String(assistantSettings.businessHours || "").trim().slice(0, 240),
       };
     }
     if (widgetTheme !== undefined) {
@@ -275,6 +290,7 @@ router.delete("/:id", requireSuperAdmin, async (req, res) => {
     await TokenWallet.deleteMany({ companyId: company._id });
     await CreditTransaction.deleteMany({ companyId: company._id });
     await UsageReceipt.deleteMany({ companyId: company._id });
+    await CreditPurchaseRequest.deleteMany({ companyId: company._id });
     res.json({ message: "Company deleted", company });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -163,6 +163,79 @@ async function addCredits(companyId, options = {}) {
   }
 }
 
+async function reversePurchasedCredits(companyId, transactionId, options = {}) {
+  const original = await CreditTransaction.findOne({
+    _id: transactionId,
+    companyId,
+    type: "purchase",
+    direction: "credit",
+    status: "completed",
+  });
+  if (!original) {
+    const error = new Error("The original credit allocation could not be found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const existing = await CreditTransaction.findOne({
+    companyId,
+    type: "reversal",
+    reference: `REV-${original._id}`,
+    status: "completed",
+  });
+  if (existing) {
+    const error = new Error("This credit allocation has already been reversed");
+    error.statusCode = 409;
+    error.code = "ALLOCATION_ALREADY_REVERSED";
+    throw error;
+  }
+
+  const amount = Math.max(0, Number(original.credits || 0));
+  const wallet = await TokenWallet.findOneAndUpdate(
+    {
+      _id: original.walletId,
+      companyId,
+      availableCredits: { $gte: amount },
+      lifetimePurchased: { $gte: amount },
+    },
+    {
+      $inc: { availableCredits: -amount, lifetimePurchased: -amount },
+    },
+    { new: true }
+  );
+  if (!wallet) {
+    const error = new Error("This company has already used some of these credits, so the allocation cannot be fully reversed");
+    error.statusCode = 409;
+    error.code = "INSUFFICIENT_CREDITS_FOR_REVERSAL";
+    throw error;
+  }
+
+  try {
+    const transaction = await CreditTransaction.create({
+      companyId,
+      walletId: wallet._id,
+      type: "reversal",
+      status: "completed",
+      direction: "debit",
+      credits: amount,
+      balanceAfter: wallet.availableCredits,
+      source: "payment-reversal",
+      reference: `REV-${original._id}`,
+      paymentAmount: original.paymentAmount,
+      paymentCurrency: original.paymentCurrency,
+      note: String(options.reason || "Purchased credit allocation reversed").trim(),
+      createdBy: options.createdBy || null,
+    });
+    return { wallet, transaction, original };
+  } catch (error) {
+    await TokenWallet.updateOne(
+      { _id: wallet._id },
+      { $inc: { availableCredits: amount, lifetimePurchased: amount } }
+    );
+    throw error;
+  }
+}
+
 async function chargeWallet(companyId, usage, source = "rag") {
   const values = normalizedUsage(usage);
   const calculatedCredits = calculateCredits(usage, source);
@@ -306,7 +379,13 @@ async function listTransactions(companyId, { limit = 50, page = 1 } = {}) {
     CreditTransaction.find({ companyId }).sort({ createdAt: -1 }).skip((safePage - 1) * safeLimit).limit(safeLimit).lean(),
     CreditTransaction.countDocuments({ companyId }),
   ]);
-  return { transactions, total, page: safePage, limit: safeLimit };
+  return {
+    transactions,
+    total,
+    page: safePage,
+    limit: safeLimit,
+    pages: Math.max(1, Math.ceil(total / safeLimit)),
+  };
 }
 
 async function assertTokenAllowance(companyId) {
@@ -331,6 +410,7 @@ module.exports = {
   calculateCredits,
   ensureWallet,
   addCredits,
+  reversePurchasedCredits,
   recordTokenUsage,
   walletSummary,
   getTokenUsage,

@@ -26,7 +26,7 @@ function metaError(error, fallback) {
   return wrapped;
 }
 
-async function exchangeEmbeddedSignupCode(code) {
+async function exchangeAuthorizationCode(code) {
   requireMetaApp();
   if (!String(code || "").trim()) {
     const error = new Error("Meta authorization code is required");
@@ -175,7 +175,8 @@ function connectionId() {
 
 module.exports = {
   connectionId,
-  exchangeEmbeddedSignupCode,
+  exchangeAuthorizationCode,
+  exchangeEmbeddedSignupCode: exchangeAuthorizationCode,
   exchangeLongLivedUserToken,
   getWhatsAppPhone,
   graphVersion,

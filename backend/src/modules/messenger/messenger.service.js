@@ -24,13 +24,33 @@ async function integrationForPage(pageId) {
   return integration;
 }
 
-async function sendText({ recipientId, text, integration, suggestions = [] }) {
+async function integrationForCompany(companyId) {
+  const integration = await MessengerIntegration.findOne({ companyId, isActive: true })
+    .select("+encryptedPageAccessToken +pageAccessTokenIv +pageAccessTokenAuthTag");
+  if (!integration) throw new Error("Active Messenger integration not found for company");
+  return integration;
+}
+
+async function sendText({
+  recipientId,
+  text,
+  integration,
+  companyId,
+  suggestions = [],
+  messagingType = "RESPONSE",
+  tag = "",
+}) {
+  if (!recipientId || !String(recipientId).trim()) {
+    throw new Error("Messenger recipient ID is required");
+  }
+  const activeIntegration = integration || (await integrationForCompany(companyId));
   const version = String(config.graphApiVersion || "v20.0").replace(/^v?/, "v");
   const response = await axios.post(
     `https://graph.facebook.com/${version}/me/messages`,
     {
       recipient: { id: recipientId },
-      messaging_type: "RESPONSE",
+      messaging_type: messagingType,
+      ...(tag ? { tag } : {}),
       message: {
         text: String(text).slice(0, 2000),
         ...(suggestions.length ? {
@@ -43,7 +63,7 @@ async function sendText({ recipientId, text, integration, suggestions = [] }) {
       },
     },
     {
-      headers: { Authorization: `Bearer ${integration.getPageAccessToken()}` },
+      headers: { Authorization: `Bearer ${activeIntegration.getPageAccessToken()}` },
       timeout: 20000,
     }
   );
@@ -106,14 +126,32 @@ async function validateIntegration(companyId) {
     .select("+encryptedPageAccessToken +pageAccessTokenIv +pageAccessTokenAuthTag");
   if (!integration) throw new Error("Active Messenger integration not found");
   const version = String(config.graphApiVersion || "v20.0").replace(/^v?/, "v");
-  const response = await axios.get(`https://graph.facebook.com/${version}/${integration.pageId}`, {
-    params: { fields: "id,name" },
+  const response = await axios.get(`https://graph.facebook.com/${version}/${integration.pageId}/subscribed_apps`, {
     headers: { Authorization: `Bearer ${integration.getPageAccessToken()}` },
     timeout: 20000,
   });
-  integration.pageName = response.data.name || integration.pageName;
-  await integration.save();
-  return { status: "valid", page: response.data };
+  const subscriptions = Array.isArray(response.data?.data) ? response.data.data : [];
+  const appSubscription = subscriptions.find((item) => String(item.id) === String(config.metaAppId));
+  if (!appSubscription) {
+    const error = new Error("This Facebook Page is not subscribed to the Pentarix Messenger webhook. Reconnect the Page and try again.");
+    error.status = 409;
+    throw error;
+  }
+  const subscribedFields = Array.isArray(appSubscription.subscribed_fields)
+    ? appSubscription.subscribed_fields
+    : [];
+  const requiredFields = ["messages", "messaging_postbacks"];
+  const missingFields = requiredFields.filter((field) => !subscribedFields.includes(field));
+  if (missingFields.length) {
+    const error = new Error(`Messenger webhook subscription is missing: ${missingFields.join(", ")}. Reconnect the Page and try again.`);
+    error.status = 409;
+    throw error;
+  }
+  return {
+    status: "valid",
+    page: { id: integration.pageId, name: integration.pageName || integration.pageId },
+    webhook: { subscribed: true, fields: subscribedFields },
+  };
 }
 
 module.exports = { replyToMessage, sendImage, sendText, validateIntegration };

@@ -5,6 +5,12 @@ export const emptyCompanyForm = {
   senderName: "",
   senderPhone: "",
   senderAddress: "",
+  welcomeMessageEn: "",
+  welcomeMessageSi: "",
+  welcomeMessageTa: "",
+  supportPhone: "",
+  supportWhatsApp: "",
+  businessHours: "",
 };
 
 export const emptyWhatsAppForm = {

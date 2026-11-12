@@ -4,7 +4,7 @@ const creditTransactionSchema = new mongoose.Schema(
   {
     companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
     walletId: { type: mongoose.Schema.Types.ObjectId, ref: "TokenWallet", required: true },
-    type: { type: String, enum: ["purchase", "bonus", "usage", "refund", "adjustment", "migration"], required: true },
+    type: { type: String, enum: ["purchase", "bonus", "usage", "refund", "adjustment", "migration", "reversal"], required: true },
     status: { type: String, enum: ["pending", "completed", "failed"], default: "completed" },
     direction: { type: String, enum: ["credit", "debit"], required: true },
     credits: { type: Number, required: true, min: 0 },

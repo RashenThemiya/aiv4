@@ -19,12 +19,18 @@ function friendlyErrorMessage({ status = 0, data = {}, path = "", cause = null }
   const isDocumentRequest = path.includes("/documents");
 
   if (!status || technical.includes("failed to fetch") || technical.includes("networkerror")) {
-    return "We couldn't connect to the server. Check that the backend is running, then try again.";
+    return "We couldn't connect to the service. Check your internet connection and try again.";
   }
   if (status === 401) return "Your session has expired. Please sign in again.";
   if (status === 403) return "You don't have permission to perform this action.";
   if (status === 404) return "The requested item could not be found. Refresh the page and try again.";
   if (status === 409) {
+    if (data?.code === "INSUFFICIENT_CREDITS_FOR_REVERSAL") {
+      return "This company has already used some of the allocated credits. The full allocation cannot be reversed.";
+    }
+    if (data?.code === "ALLOCATION_ALREADY_REVERSED") {
+      return "This credit allocation has already been reversed.";
+    }
     return data?.duplicate
       ? "This PDF is already in the knowledge base, so it was not uploaded again."
       : "This change conflicts with existing data. Refresh the page and try again.";
@@ -141,7 +147,6 @@ async function downloadToFile(path, fileHandle, onProgress) {
 
 export const api = {
   baseUrl: API_BASE_URL,
-  health: () => request("/health"),
   auth: {
     login: (payload) =>
       request("/api/auth/login", {
@@ -178,6 +183,108 @@ export const api = {
       formData.append("confirm", confirmation);
       return request("/api/backups/restore", { method: "POST", body: formData });
     },
+  },
+  analytics: {
+    platform: () => request("/api/analytics/platform"),
+    usage: (filters = {}) => {
+      const query = new URLSearchParams(
+        Object.entries(filters).filter(([, value]) => value !== "" && value !== undefined)
+      );
+      return request(`/api/analytics/usage?${query}`);
+    },
+    usageReport: (filters = {}) => {
+      const query = new URLSearchParams(
+        Object.entries(filters).filter(([, value]) => value !== "" && value !== undefined)
+      );
+      return download(`/api/analytics/usage/export?${query}`);
+    },
+  },
+  support: {
+    assignees: () => request("/api/support/assignees"),
+    summary: (filters = {}) => {
+      const query = new URLSearchParams(
+        Object.entries(filters).filter(([, value]) => value !== "" && value !== undefined)
+      );
+      return request(`/api/support/summary?${query}`);
+    },
+    tickets: (filters = {}) => {
+      const query = new URLSearchParams(
+        Object.entries(filters).filter(([, value]) => value !== "" && value !== undefined)
+      );
+      return request(`/api/support/tickets?${query}`);
+    },
+    ticket: (id) => request(`/api/support/tickets/${id}`),
+    createTicket: (payload) => {
+      const form = new FormData();
+      form.append("companyId", payload.companyId || "");
+      form.append("subject", payload.subject || "");
+      form.append("description", payload.description || "");
+      form.append("category", payload.category || "technical");
+      form.append("priority", payload.priority || "normal");
+      for (const file of payload.attachments || []) form.append("attachments", file);
+      return request("/api/support/tickets", { method: "POST", body: form });
+    },
+    reply: (id, payload) => {
+      const form = new FormData();
+      form.append("message", payload.message || "");
+      form.append("isInternal", payload.isInternal ? "true" : "false");
+      for (const file of payload.attachments || []) form.append("attachments", file);
+      return request(`/api/support/tickets/${id}/replies`, { method: "POST", body: form });
+    },
+    update: (id, payload) => request(`/api/support/tickets/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    }),
+    attachment: (ticketId, attachmentId) => download(`/api/support/tickets/${ticketId}/attachments/${attachmentId}`),
+  },
+  billing: {
+    plans: () => request("/api/billing/plans"),
+    createPlan: (payload) => request("/api/billing/plans", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    }),
+    updatePlan: (id, payload) => request(`/api/billing/plans/${id}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    }),
+    deletePlan: (id) => request(`/api/billing/plans/${id}`, { method: "DELETE" }),
+    settings: () => request("/api/billing/settings"),
+    updateSettings: (payload) => request("/api/billing/settings", {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    }),
+    requests: (filters = {}) => {
+      const query = new URLSearchParams(
+        Object.entries(filters).filter(([, value]) => value !== "" && value !== undefined)
+      );
+      return request(`/api/billing/requests?${query}`);
+    },
+    submitRequest: (companyId, payload) => {
+      const form = new FormData();
+      form.append("planId", payload.planId);
+      form.append("bankReference", payload.bankReference || "");
+      form.append("note", payload.note || "");
+      form.append("slip", payload.slip);
+      return request(`/api/billing/companies/${companyId}/requests`, { method: "POST", body: form });
+    },
+    approve: (id, note = "") => request(`/api/billing/requests/${id}/approve`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note }),
+    }),
+    reject: (id, note) => request(`/api/billing/requests/${id}/reject`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note }),
+    }),
+    reverse: (id, reason) => request(`/api/billing/requests/${id}/reverse`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }),
+    }),
+    allocations: (filters = {}) => {
+      const query = new URLSearchParams(
+        Object.entries(filters).filter(([, value]) => value !== "" && value !== undefined)
+      );
+      return request(`/api/billing/allocations?${query}`);
+    },
+    allocationsReport: (filters = {}) => {
+      const query = new URLSearchParams(
+        Object.entries(filters).filter(([, value]) => value !== "" && value !== undefined)
+      );
+      return download(`/api/billing/allocations/export?${query}`);
+    },
+    slip: (id) => download(`/api/billing/requests/${id}/slip`),
   },
   companies: {
     list: () => request("/api/companies"),
@@ -220,8 +327,12 @@ export const api = {
         method: "POST",
       }),
     tokenUsage: (id) => request(`/api/companies/${id}/token-usage`),
-    creditTransactions: (id, page = 1) =>
-      request(`/api/companies/${id}/credits/transactions?page=${page}&limit=50`),
+    creditTransactions: (id, filters = {}) => {
+      const query = new URLSearchParams(
+        Object.entries(filters).filter(([, value]) => value !== "" && value !== undefined)
+      );
+      return request(`/api/companies/${id}/credits/transactions?${query}`);
+    },
     addCredits: (id, payload) =>
       request(`/api/companies/${id}/credits`, {
         method: "POST",
@@ -277,11 +388,11 @@ export const api = {
     get: (companyId) => request(`/api/companies/${companyId}/messenger-integration`),
     connectConfig: (companyId) =>
       request(`/api/companies/${companyId}/messenger-integration/connect-config`),
-    discoverPages: (companyId, accessToken) =>
+    discoverPages: (companyId, authorization) =>
       request(`/api/companies/${companyId}/messenger-integration/connect/pages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessToken }),
+        body: JSON.stringify(authorization),
       }),
     connectPage: (companyId, payload) =>
       request(`/api/companies/${companyId}/messenger-integration/connect`, {
@@ -302,6 +413,12 @@ export const api = {
   },
   products: {
     list: (companyId) => request(`/api/companies/${companyId}/products`),
+    dashboard: (companyId, filters = {}) => {
+      const query = new URLSearchParams(
+        Object.entries(filters).filter(([, value]) => value !== "" && value !== undefined)
+      );
+      return request(`/api/companies/${companyId}/products/dashboard?${query}`);
+    },
     create: (companyId, payload) =>
       request(`/api/companies/${companyId}/products`, {
         method: "POST",
@@ -316,6 +433,26 @@ export const api = {
       }),
     remove: (companyId, productId) =>
       request(`/api/companies/${companyId}/products/${productId}`, { method: "DELETE" }),
+    uploadImage: (companyId, productId, file, altText = "") => {
+      const form = new FormData();
+      form.append("image", file);
+      form.append("altText", altText);
+      return request(`/api/companies/${companyId}/products/${productId}/image`, { method: "POST", body: form });
+    },
+    removeImage: (companyId, productId) =>
+      request(`/api/companies/${companyId}/products/${productId}/image`, { method: "DELETE" }),
+    template: (companyId) => download(`/api/companies/${companyId}/products/template`),
+    previewImport: (companyId, file) => {
+      const form = new FormData();
+      form.append("file", file);
+      return request(`/api/companies/${companyId}/products/import/preview`, { method: "POST", body: form });
+    },
+    import: (companyId, file, duplicateMode) => {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("duplicateMode", duplicateMode);
+      return request(`/api/companies/${companyId}/products/import`, { method: "POST", body: form });
+    },
   },
   orders: {
     list: (companyId, filters = {}) => {
@@ -325,11 +462,21 @@ export const api = {
       return request(`/api/companies/${companyId}/orders?${query}`);
     },
     summary: (companyId) => request(`/api/companies/${companyId}/orders/summary`),
+    update: (companyId, orderId, payload) =>
+      request(`/api/companies/${companyId}/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }),
     setStatus: (companyId, orderId, status) =>
       request(`/api/companies/${companyId}/orders/${orderId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
+      }),
+    retryTrackingNotification: (companyId, orderId) =>
+      request(`/api/companies/${companyId}/orders/${orderId}/tracking-notification/retry`, {
+        method: "POST",
       }),
   },
   documents: {

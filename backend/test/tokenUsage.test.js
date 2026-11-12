@@ -48,6 +48,22 @@ test("wallet and immutable ledger schemas accept prepaid records", async () => {
   assert.equal(transaction.balanceAfter, 500000);
 });
 
+test("credit ledger accepts a debit reversal without deleting the purchase", async () => {
+  const companyId = "507f1f77bcf86cd799439011";
+  const transaction = new CreditTransaction({
+    companyId,
+    walletId: "507f1f77bcf86cd799439012",
+    type: "reversal",
+    direction: "debit",
+    credits: 160000,
+    balanceAfter: 340000,
+    reference: "REV-507f1f77bcf86cd799439013",
+  });
+  await transaction.validate();
+  assert.equal(transaction.type, "reversal");
+  assert.equal(transaction.direction, "debit");
+});
+
 test("paid top-up creates its ledger entry before changing the wallet", async () => {
   const originalFindOne = TokenWallet.findOne;
   const originalFindOneAndUpdate = TokenWallet.findOneAndUpdate;

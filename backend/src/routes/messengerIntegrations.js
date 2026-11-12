@@ -21,14 +21,20 @@ router.get("/connect-config", asyncRoute(async (req, res) => {
   if (!(await Company.exists({ _id: req.params.companyId }))) {
     return res.status(404).json({ error: "Company not found" });
   }
-  const enabled = Boolean(config.metaAppId && config.metaAppSecret);
+  const enabled = Boolean(
+    config.metaAppId
+    && config.metaAppSecret
+    && config.messengerLoginConfigId
+  );
   return res.json({
     enabled,
     appId: config.metaAppId || "",
     configId: config.messengerLoginConfigId || "",
     graphApiVersion: metaOnboarding.graphVersion(),
     permissions: ["pages_show_list", "pages_messaging", "pages_manage_metadata"],
-    reason: enabled ? "" : "Meta Facebook Login is not configured on the Pentarix server.",
+    reason: enabled
+      ? ""
+      : "Meta Facebook Login is not configured. Add META_APP_ID, META_APP_SECRET, and MESSENGER_LOGIN_CONFIG_ID on the Pentarix server.",
   });
 }));
 
@@ -37,7 +43,19 @@ router.post("/connect/pages", async (req, res) => {
     if (!(await Company.exists({ _id: req.params.companyId }))) {
       return res.status(404).json({ error: "Company not found" });
     }
-    const userAccessToken = await metaOnboarding.exchangeLongLivedUserToken(req.body.accessToken);
+    let userAccessToken;
+    if (String(req.body.code || "").trim()) {
+      const exchangedToken = await metaOnboarding.exchangeAuthorizationCode(req.body.code);
+      try {
+        userAccessToken = await metaOnboarding.exchangeLongLivedUserToken(exchangedToken);
+      } catch {
+        // Facebook Login for Business may already return the configured
+        // long-lived token type, which can be used directly for Page lookup.
+        userAccessToken = exchangedToken;
+      }
+    } else {
+      userAccessToken = await metaOnboarding.exchangeLongLivedUserToken(req.body.accessToken);
+    }
     const pages = await metaOnboarding.listFacebookPages(userAccessToken);
     if (!pages.length) {
       return res.status(400).json({
@@ -118,7 +136,7 @@ router.post("/connect", async (req, res) => {
 
 router.get("/", asyncRoute(async (req, res) => {
   const integration = await findIntegration(req.params.companyId);
-  if (!integration) return res.status(404).json({ error: "Messenger integration not found" });
+  if (!integration) return res.json(null);
   return res.json(integration.toSafeJSON());
 }));
 
@@ -126,7 +144,7 @@ router.post("/validate", async (req, res) => {
   try {
     return res.json(await messengerService.validateIntegration(req.params.companyId));
   } catch (error) {
-    return res.status(error.response?.status || 500).json({
+    return res.status(error.response?.status || error.status || 500).json({
       status: "invalid",
       error: error.response?.data?.error?.message || error.message,
     });

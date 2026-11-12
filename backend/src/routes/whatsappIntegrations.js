@@ -157,7 +157,7 @@ router.get("/", async (req, res) => {
 
     const integration = await findIntegration(req.params.companyId);
     if (!integration) {
-      return res.status(404).json({ error: "WhatsApp integration not found" });
+      return res.json(null);
     }
 
     res.json(integration.toSafeJSON());

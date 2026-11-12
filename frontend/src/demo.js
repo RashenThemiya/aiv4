@@ -1,4 +1,5 @@
 const CONFIG_KEY = "rag_solar_demo_widget_config";
+const DEFAULT_API_BASE_URL = import.meta.env.VITE_API_BASE_URL || window.location.origin;
 const dialog = document.querySelector(".setup-dialog");
 const setupForm = document.querySelector(".setup-card");
 const setupStatus = document.querySelector(".setup-status");
@@ -20,7 +21,7 @@ function showToast(message) {
 
 function openSetup(message = "") {
   const config = readConfig();
-  setupForm.elements.apiBaseUrl.value = config.apiBaseUrl || "http://localhost:3000";
+  setupForm.elements.apiBaseUrl.value = config.apiBaseUrl || DEFAULT_API_BASE_URL;
   setupForm.elements.companyId.value = config.companyId || "";
   setupForm.elements.apiKey.value = config.apiKey || "";
   setupStatus.textContent = message;
@@ -35,7 +36,7 @@ async function loadWidget(config) {
 
   window.RAG_CHAT_WIDGET = {
     autoInit: true,
-    apiBaseUrl: String(config.apiBaseUrl || "http://localhost:3000").replace(/\/$/, ""),
+    apiBaseUrl: String(config.apiBaseUrl || DEFAULT_API_BASE_URL).replace(/\/$/, ""),
     companyId: config.companyId,
     apiKey: config.apiKey,
     title: "BrightGrid Guide",
@@ -80,7 +81,7 @@ setupForm.addEventListener("submit", (event) => {
 document.querySelector(".clear-config").addEventListener("click", () => {
   localStorage.removeItem(CONFIG_KEY);
   setupForm.reset();
-  setupForm.elements.apiBaseUrl.value = "http://localhost:3000";
+  setupForm.elements.apiBaseUrl.value = DEFAULT_API_BASE_URL;
   setupStatus.textContent = "Saved widget configuration cleared.";
 });
 

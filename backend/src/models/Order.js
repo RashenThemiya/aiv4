@@ -50,6 +50,24 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
     notes: { type: String, default: "" },
+    tracking: {
+      courierName: { type: String, default: "" },
+      trackingId: { type: String, default: "" },
+      trackingUrl: { type: String, default: "" },
+      notification: {
+        status: {
+          type: String,
+          enum: ["not_sent", "pending", "sent", "failed"],
+          default: "not_sent",
+        },
+        channel: { type: String, default: "" },
+        signature: { type: String, default: "" },
+        attemptedAt: { type: Date, default: null },
+        sentAt: { type: Date, default: null },
+        messageId: { type: String, default: "" },
+        lastError: { type: String, default: "" },
+      },
+    },
     status: {
       type: String,
       enum: ["new", "confirmed", "processing", "shipped", "delivered", "cancelled"],
@@ -60,10 +78,15 @@ const orderSchema = new mongoose.Schema(
       type: [{ status: String, changedAt: Date, changedBy: String }],
       default: () => [{ status: "new", changedAt: new Date(), changedBy: "customer" }],
     },
+    editHistory: {
+      type: [{ changedAt: Date, changedBy: String, summary: String }],
+      default: [],
+    },
   },
   { timestamps: true }
 );
 
 orderSchema.index({ companyId: 1, status: 1, createdAt: -1 });
+orderSchema.index({ companyId: 1, createdAt: -1 });
 
 module.exports = mongoose.models.Order || mongoose.model("Order", orderSchema);

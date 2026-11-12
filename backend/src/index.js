@@ -24,6 +24,9 @@ const productsRouter = require("./routes/products");
 const messengerIntegrationsRouter = require("./routes/messengerIntegrations");
 const messengerRoutes = require("./modules/messenger/messenger.routes");
 const mediaRouter = require("./routes/media");
+const billingRouter = require("./routes/billing");
+const analyticsRouter = require("./routes/analytics");
+const supportRouter = require("./routes/support");
 
 const app = express();
 
@@ -61,6 +64,9 @@ app.use("/api/auth", authRouter);
 app.use("/media", mediaRouter);
 app.use("/api/admin-users", requireAuth, adminUsersRouter);
 app.use("/api/backups", requireAuth, backupsRouter);
+app.use("/api/billing", requireAuth, billingRouter);
+app.use("/api/analytics", requireAuth, analyticsRouter);
+app.use("/api/support", requireAuth, supportRouter);
 app.use("/api/companies", requireAuth, companiesRouter);
 app.use("/api/companies/:companyId/documents", requireAuth, documentsRouter);
 app.use("/api/companies/:companyId/chat", requireAuth, chatRouter);

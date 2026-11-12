@@ -123,17 +123,29 @@ export async function startMessengerLogin({ appId, configId, graphApiVersion, pe
   const FB = await loadMetaSdk({ appId, graphApiVersion });
   return new Promise((resolve, reject) => {
     FB.login((response) => {
-      const accessToken = response?.authResponse?.accessToken;
-      if (!accessToken) {
+      const authorization = configId
+        ? { code: response?.authResponse?.code }
+        : { accessToken: response?.authResponse?.accessToken };
+      if (!authorization.code && !authorization.accessToken) {
         reject(new Error("Facebook Page authorization was cancelled or incomplete"));
         return;
       }
-      resolve(String(accessToken));
-    }, {
-      ...(configId ? { config_id: configId } : {}),
-      scope: permissions.join(","),
-      return_scopes: true,
-      auth_type: "rerequest",
-    });
+      resolve(Object.fromEntries(
+        Object.entries(authorization)
+          .filter(([, value]) => value)
+          .map(([key, value]) => [key, String(value)])
+      ));
+    }, configId
+      ? {
+        config_id: configId,
+        response_type: "code",
+        override_default_response_type: true,
+        auth_type: "rerequest",
+      }
+      : {
+        scope: permissions.join(","),
+        return_scopes: true,
+        auth_type: "rerequest",
+      });
   });
 }

@@ -14,6 +14,11 @@ class HistoryAndNumericGuardrailTests(unittest.TestCase):
         self.assertIn("Do not create a table", SYSTEM_PROMPT)
         self.assertIn("Keep citations unobtrusive", SYSTEM_PROMPT)
 
+    def test_multilingual_answers_preserve_natural_technical_english(self):
+        self.assertIn("use natural mixed-language writing", SYSTEM_PROMPT)
+        self.assertIn("Never create a phonetic Sinhala/Tamil spelling", SYSTEM_PROMPT)
+        self.assertIn('"Capacity: 1.8 L"', SYSTEM_PROMPT)
+
     def test_product_help_stays_relevant_and_inside_company_catalog(self):
         self.assertIn("a battery monitor is not an answer to a solar-panel request", SYSTEM_PROMPT)
         self.assertIn("Never direct the customer to another dealer", SYSTEM_PROMPT)

@@ -61,7 +61,7 @@ router.get("/", async (req, res) => {
   try {
     await ensureCompany(req.params.companyId);
     const integration = await findIntegration(req.params.companyId);
-    if (!integration) return res.status(404).json({ error: "SMS integration not found" });
+    if (!integration) return res.json(null);
     res.json(integration.toSafeJSON());
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });

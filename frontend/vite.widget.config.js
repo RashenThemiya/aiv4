@@ -8,7 +8,9 @@ export default defineConfig({
       formats: ["iife"],
       fileName: () => "rag-chat-widget.iife.js",
     },
-    outDir: "dist-widget",
-    emptyOutDir: true,
+    // Keep the embeddable bundle inside the main frontend deployment so the
+    // dashboard origin can serve it without a separate widget host.
+    outDir: "dist/dist-widget",
+    emptyOutDir: false,
   },
 });

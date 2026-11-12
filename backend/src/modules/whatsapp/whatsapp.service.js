@@ -196,6 +196,50 @@ async function sendTextMessage({ to, text, companyId, integration }) {
   }
 }
 
+async function sendOrderTrackingTemplate({
+  to,
+  companyId,
+  integration,
+  orderNumber,
+  courierName,
+  trackingId,
+  trackingUrl,
+}) {
+  if (!config.whatsappTrackingTemplateName) {
+    throw new Error("WhatsApp order tracking template is not configured");
+  }
+  const activeIntegration = integration || (await getIntegrationByCompanyId(companyId));
+  const accessToken = activeIntegration.getAccessToken();
+  const response = await axios.post(
+    buildMessagesUrl(activeIntegration.phoneNumberId),
+    {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: String(to).trim(),
+      type: "template",
+      template: {
+        name: config.whatsappTrackingTemplateName,
+        language: { code: config.whatsappTrackingTemplateLanguage },
+        components: [{
+          type: "body",
+          parameters: [orderNumber, courierName, trackingId, trackingUrl].map((value) => ({
+            type: "text",
+            text: String(value || "-").slice(0, 1024),
+          })),
+        }],
+      },
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 20000,
+    }
+  );
+  return response.data;
+}
+
 async function sendImageMessage({ to, imageUrl, caption = "", integration }) {
   const accessToken = integration.getAccessToken();
   const response = await axios.post(
@@ -345,6 +389,7 @@ module.exports = {
   createRagReply,
   replyToIncomingMessage,
   sendTextMessage,
+  sendOrderTrackingTemplate,
   sendImageMessage,
   sendChoiceMessage,
   validateIntegration,

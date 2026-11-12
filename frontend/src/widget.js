@@ -165,19 +165,14 @@ function messageNode(role, text, sources = [], feedbackOptions = null, suggestio
     }
     node.appendChild(gallery);
   }
-  appendFormattedAnswer(node, text);
-  if (sources.length) {
-    const sourceBox = document.createElement("div");
-    sourceBox.className = "ragw-sources";
-    const sourceLabels = [...new Set(sources.map((source) => {
-      if (!source.documentName) return "";
-      return source.pageNumber
-        ? `${source.documentName} (page ${source.pageNumber})`
-        : source.documentName;
-    }).filter(Boolean))];
-    sourceBox.textContent = `Sources: ${sourceLabels.join(", ")}`;
-    node.appendChild(sourceBox);
-  }
+  const customerText = role === "user"
+    ? text
+    : String(text || "")
+      .replace(/\s*\[Source(?:s)?\s+\d+(?:\s*[,;&]\s*\d+)*\]/gi, "")
+      .replace(/[ \t]+([,.;:!?])/g, "$1")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  appendFormattedAnswer(node, customerText);
   if (role !== "user" && suggestions.length) {
     const choices = document.createElement("div");
     choices.className = "ragw-suggestions";
@@ -351,6 +346,7 @@ function initWidget(options = {}) {
   const voiceStop = root.querySelector(".ragw-voice-stop");
   const voiceEnd = root.querySelector(".ragw-voice-end");
   let historyReady = false;
+  let renderedHistoryCount = 0;
   let voiceController = null;
   let voiceState = "idle";
   let voiceMuted = false;
@@ -479,6 +475,7 @@ function initWidget(options = {}) {
         result.suggestions || [],
         result.media || []
       ));
+      renderedHistoryCount += 2;
       if (result.language) voiceLanguage = result.language;
       if (voiceController && result.answer) {
         if (result.language) voiceController.setInputLanguage(result.language);
@@ -500,11 +497,13 @@ function initWidget(options = {}) {
   toggle.addEventListener("click", () => {
     const willOpen = !root.classList.contains("ragw-open");
     root.classList.toggle("ragw-open");
+    if (willOpen) syncConversationHistory();
     if (!willOpen) stopVoice();
   });
   newChat.addEventListener("click", () => {
     stopVoice();
     sessionId = createSessionId(config.companyId);
+    renderedHistoryCount = 0;
     voiceLanguage = "";
     messages.replaceChildren(messageNode("bot", config.greeting || "Hi, how can I help?"));
     input.value = "";
@@ -538,6 +537,7 @@ function initWidget(options = {}) {
       const history = await loadHistory(config, sessionId);
       loading.remove();
       const savedMessages = Array.isArray(history.messages) ? history.messages : [];
+      renderedHistoryCount = savedMessages.length;
       voiceLanguage = history.preferredLanguage || "";
       if (!savedMessages.length) {
         messages.appendChild(messageNode("bot", config.greeting || "Hi, how can I help?"));
@@ -569,7 +569,31 @@ function initWidget(options = {}) {
     }
   }
 
+  async function syncConversationHistory() {
+    if (!historyReady || !root.classList.contains("ragw-open")) return;
+    try {
+      const history = await loadHistory(config, sessionId);
+      const savedMessages = Array.isArray(history.messages) ? history.messages : [];
+      if (savedMessages.length <= renderedHistoryCount) return;
+      for (const savedMessage of savedMessages.slice(renderedHistoryCount)) {
+        messages.appendChild(messageNode(
+          savedMessage.role,
+          savedMessage.content,
+          savedMessage.sources || [],
+          null,
+          [],
+          savedMessage.media || []
+        ));
+      }
+      renderedHistoryCount = savedMessages.length;
+      messages.scrollTop = messages.scrollHeight;
+    } catch (error) {
+      console.warn("[RAG Widget] Unable to refresh chat history", error);
+    }
+  }
+
   restoreConversation();
+  window.setInterval(syncConversationHistory, 10000);
 }
 
 window.RAGChatWidget = { init: initWidget };

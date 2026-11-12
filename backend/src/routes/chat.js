@@ -7,13 +7,19 @@ const Company = require("../models/Company");
 const Conversation = require("../models/Conversation");
 const ragClient = require("../services/ragClient");
 const { preprocessUserMessage } = require("../services/messagePreprocessor");
-const { processCommerceMessage } = require("../services/commerce");
+const {
+  commercialProductAnswer,
+  processCommerceMessage,
+  withContactOwnerSuggestion,
+  withPlaceOrderSuggestion,
+} = require("../services/commerce");
 const { findQuestionMedia, mapSourcesWithMedia } = require("../services/sourceMedia");
 const { verifyGoogleIdToken } = require("../services/googleAuth");
 const { verifyExternalUserToken } = require("../services/externalUserAuth");
 const { canAccessCompany } = require("../middleware/auth");
 const { createRateLimit } = require("../middleware/rateLimit");
 const { assertTokenAllowance, recordTokenUsage } = require("../services/tokenUsage");
+const { customerFacingAnswer, unknownAnswer } = require("../services/customerResponse");
 
 const router = express.Router({ mergeParams: true });
 const widgetRateLimit = createRateLimit({
@@ -478,24 +484,29 @@ router.post("/", async (req, res) => {
     await assertTokenAllowance(company._id);
 
     const preprocessStarted = nowMs();
-    const preprocessed = await preprocessUserMessage(originalMessage, {
-      skipSmallTalk: isSuggestion === true,
-      responseLanguage: commerce.language,
-      companyId: company._id.toString(),
-    });
+    const preprocessed = commerce.understanding
+      ? { type: "support", question: commerce.normalizedMessage || originalMessage }
+      : await preprocessUserMessage(originalMessage, {
+        skipSmallTalk: isSuggestion === true,
+        responseLanguage: commerce.language,
+        companyId: company._id.toString(),
+      });
     timingsMs.preprocessing = nowMs() - preprocessStarted;
 
     if (preprocessed.type === "small_talk") {
+      const smallTalkAnswer = isWidgetRequest(req)
+        ? customerFacingAnswer(preprocessed.reply)
+        : preprocessed.reply;
       conversation.messages.push({
         role: "assistant",
-        content: preprocessed.reply,
+        content: smallTalkAnswer,
       });
       await conversation.save();
 
       timingsMs.total = nowMs() - requestStarted;
       return res.json({
         sessionId: sid,
-        answer: preprocessed.reply,
+        answer: smallTalkAnswer,
         sources: [],
         media: [],
         suggestions: [],
@@ -552,7 +563,20 @@ router.post("/", async (req, res) => {
     ragClient.updateConversationRagContext(conversation, ragResult);
 
     const ragAnswer = ragResult.answer || "";
-    const combinedAnswer = ragAnswer || "I could not find an answer for that yet.";
+    const hasGroundedKnowledge = sources.length > 0 || media.length > 0;
+    const rawCombinedAnswer = commerce.catalogProduct && !hasGroundedKnowledge
+      ? commercialProductAnswer(commerce.catalogProduct, commerce.language)
+      : hasGroundedKnowledge
+        ? ragAnswer
+        : unknownAnswer(company, commerce.language);
+    const combinedAnswer = isWidgetRequest(req)
+      ? customerFacingAnswer(rawCombinedAnswer)
+      : rawCombinedAnswer;
+    const suggestions = commerce.catalogProduct
+      ? withPlaceOrderSuggestion(ragResult.suggestions || [], commerce.catalogProduct, commerce.language)
+      : sources.length === 0 && media.length === 0
+        ? withContactOwnerSuggestion(ragResult.suggestions || [], commerce.language)
+        : (ragResult.suggestions || []);
     conversation.messages.push({
       role: "assistant",
       content: combinedAnswer,
@@ -566,9 +590,9 @@ router.post("/", async (req, res) => {
     res.json({
       sessionId: sid,
       answer: combinedAnswer,
-      sources,
+      sources: isWidgetRequest(req) ? [] : sources,
       media,
-      suggestions: ragResult.suggestions || [],
+      suggestions,
       conversationId: conversation._id,
       language: commerce.language,
       diagnostics,
@@ -665,9 +689,17 @@ router.get("/conversations", async (req, res) => {
       ];
     }
 
-    const conversations = await Conversation.find(filter)
+    const conversationRecords = await Conversation.find(filter)
       .sort({ updatedAt: -1 })
-      .select("-messages");
+      .select("sessionId customerName customerEmail customerPhone customerExternalId customerAuthProvider channel preferredLanguage createdAt updatedAt messages")
+      .slice("messages", -1)
+      .lean();
+
+    const conversations = conversationRecords.map(({ messages = [], ...conversation }) => ({
+      ...conversation,
+      lastMessage: messages[0]?.content || "",
+      lastMessageRole: messages[0]?.role || "",
+    }));
 
     res.json(conversations);
   } catch (err) {

@@ -4,11 +4,14 @@ const assert = require("node:assert/strict");
 const {
   detectExplicitLanguage,
   detectLanguage,
+  inferMessageLanguage,
+  isGreetingOnly,
   isBack,
   isCancel,
   isLanguageRequest,
   isCatalogListIntent,
   isCommercialProductIntent,
+  parseCommerceAction,
   isAddAnother,
   isCheckout,
   isRemoveItem,
@@ -22,6 +25,14 @@ const {
   addCurrentItemToCart,
   cartTotals,
   cartSummary,
+  commercialProductAnswer,
+  productDetailsMessage,
+  createOrderStateForProduct,
+  findCatalogProducts,
+  isContactOwnerIntent,
+  withContactOwnerSuggestion,
+  placeOrderSuggestion,
+  withPlaceOrderSuggestion,
   resolveCatalogProduct,
 } = require("../src/services/commerce");
 const { mapIncomingWebhook } = require("../src/modules/messenger/messenger.mapper");
@@ -40,6 +51,17 @@ test("detects all supported language selections", () => {
 test("does not interpret order quantities as language changes", () => {
   assert.equal(detectExplicitLanguage("3"), "");
   assert.equal(detectExplicitLanguage("Tamil"), "ta");
+});
+
+test("automatically detects native and romanized customer languages", () => {
+  assert.equal(inferMessageLanguage("Can I buy this phone?").language, "en");
+  assert.equal(inferMessageLanguage("prices saha phone wisthara puluwanda").language, "si");
+  assert.equal(inferMessageLanguage("මේකේ මිල කීයද?").language, "si");
+  assert.equal(inferMessageLanguage("இந்த பொருள் கிடைக்குமா?").language, "ta");
+  assert.equal(inferMessageLanguage("price sollunga, enna models irukku").language, "ta");
+  assert.equal(inferMessageLanguage("Lakshan", "si").language, "si");
+  assert.equal(isGreetingOnly("Hi 👋"), true);
+  assert.equal(isGreetingOnly("Hi, what products do you have?"), false);
 });
 
 test("localized product names fall back to an available translation", () => {
@@ -84,13 +106,98 @@ test("dashboard catalog resolution supports names, SKUs, and list choices", () =
   assert.equal(resolveCatalogProduct(catalog, "2").productId, "p2");
 });
 
+test("catalog resolution supports product categories and plurals", () => {
+  const catalog = {
+    products: [
+      { productId: "p1", name: "PowerMix Blender", alternateNames: [], sku: "LHS-BLN-20", price: 11900 },
+      { productId: "p2", name: "AeroBreeze Table Fan", alternateNames: [], sku: "LHS-FAN-16", price: 8900 },
+    ],
+  };
+  assert.equal(resolveCatalogProduct(catalog, "blender").productId, "p1");
+  assert.equal(resolveCatalogProduct(catalog, "do u have blenders").productId, "p1");
+  assert.deepEqual(findCatalogProducts(catalog, "fans").map((item) => item.productId), ["p2"]);
+  assert.equal(resolveCatalogProduct(catalog, "how do I clean the blender?").productId, "p1");
+  assert.equal(resolveCatalogProduct(catalog, "do you have a blander?").productId, "p1");
+  assert.equal(resolveCatalogProduct(catalog, "table fann").productId, "p2");
+});
+
 test("recognizes catalogue discovery and commercial product questions", () => {
   assert.equal(isCatalogListIntent("what products do you have"), true);
   assert.equal(isCatalogListIntent("show me your catalogue"), true);
+  assert.equal(isCatalogListIntent("give me all products"), true);
+  assert.equal(isCatalogListIntent("what prodiuct can I get"), true);
+  assert.equal(isCatalogListIntent("which producrts can I buy here"), true);
   assert.equal(isCatalogListIntent("monawada thiyena products"), true);
   assert.equal(isCatalogListIntent("tell me the warranty"), false);
   assert.equal(isCommercialProductIntent("How much is the QuickBoil kettle?"), true);
+  assert.equal(isCommercialProductIntent("Show me an image of the QuickBoil kettle"), true);
   assert.equal(isCommercialProductIntent("Tell me its technical specifications"), false);
+});
+
+test("unknown-answer handoff offers the shop owner contact action", () => {
+  assert.equal(isContactOwnerIntent("Contact shop owner"), true);
+  assert.equal(isContactOwnerIntent("speak to the seller"), true);
+  const suggestions = withContactOwnerSuggestion([], "en");
+  assert.deepEqual(suggestions, [{ label: "Contact shop owner", message: "Contact shop owner" }]);
+  assert.equal(withContactOwnerSuggestion(suggestions, "en").length, 1);
+});
+
+test("product orders require the explicit place-order action", () => {
+  const product = { productId: "p1", name: "AeroBreeze Table Fan", sku: "LHS-FAN-16" };
+  assert.equal(parseCommerceAction("hey, I came to buy a fan"), null);
+  assert.equal(parseCommerceAction("Order LHS-FAN-16"), null);
+  assert.deepEqual(parseCommerceAction("__pentarix_order_start__:p1"), {
+    type: "order_start",
+    productId: "p1",
+  });
+  assert.deepEqual(placeOrderSuggestion(product, "en"), {
+    label: "Place order",
+    message: "__pentarix_order_start__:p1",
+  });
+  assert.deepEqual(withPlaceOrderSuggestion([], product, "en"), [{
+    label: "Place order",
+    message: "__pentarix_order_start__:p1",
+  }]);
+});
+
+test("product detail suggestions preserve the active response language", () => {
+  const product = { name: "AeroBreeze Table Fan", sku: "LHS-FAN-16" };
+  assert.equal(
+    productDetailsMessage(product, "si"),
+    "LHS-FAN-16 ගැන විස්තර සිංහලෙන් කියන්න"
+  );
+  assert.equal(
+    productDetailsMessage(product, "ta"),
+    "LHS-FAN-16 பற்றிய விவரங்களை தமிழில் சொல்லுங்கள்"
+  );
+  assert.equal(productDetailsMessage(product, "en"), "Tell me more about LHS-FAN-16");
+});
+
+test("place-order action builds the variant stage before persistence", () => {
+  const state = createOrderStateForProduct({
+    productId: "p1",
+    name: "AeroBreeze Table Fan",
+    sku: "LHS-FAN-16",
+    price: 8900,
+    currency: "LKR",
+    variants: [{ id: "black", name: "Black", priceAdjustment: 0 }],
+  });
+  assert.equal(state.stage, "awaiting_variant");
+  assert.equal(state.draft.productId, "p1");
+  assert.equal(state.draft.variants[0].name, "Black");
+});
+
+test("catalogue product fallback remains useful without a matching PDF", () => {
+  const answer = commercialProductAnswer({
+    name: "PowerMix Blender",
+    sku: "LHS-BLN-20",
+    price: 11900,
+    currency: "LKR",
+    variants: [{ name: "Black" }, { name: "White" }],
+  }, "en");
+  assert.match(answer, /PowerMix Blender/);
+  assert.match(answer, /LKR 11,900\.00/);
+  assert.match(answer, /Black, White/);
 });
 
 test("recognizes clickable cart actions", () => {
@@ -230,11 +337,19 @@ test("company schema stores parcel sender details for shipping labels", async ()
       phone: "+94 77 123 4567",
       address: "10 Main Street, Colombo",
     },
+    assistantSettings: {
+      welcomeMessage: { en: "Welcome to Lanka Home Store" },
+      supportPhone: "+94 75 672 7000",
+      supportWhatsApp: "+94 75 672 7000",
+      businessHours: "Mon-Sat 9 AM-6 PM",
+    },
   });
   await company.validate();
   assert.equal(company.shippingDetails.senderName, "Lanka Home Store Dispatch");
   assert.equal(company.shippingDetails.phone, "+94 77 123 4567");
   assert.equal(company.shippingDetails.address, "10 Main Street, Colombo");
+  assert.equal(company.assistantSettings.welcomeMessage.en, "Welcome to Lanka Home Store");
+  assert.equal(company.assistantSettings.supportPhone, "+94 75 672 7000");
   assert.equal(company.monthlyTokenLimit, 1000000);
 });
 

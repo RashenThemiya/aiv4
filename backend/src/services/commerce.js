@@ -4,6 +4,9 @@ const Company = require("../models/Company");
 const Conversation = require("../models/Conversation");
 const Order = require("../models/Order");
 const Product = require("../models/Product");
+const { dedupeProductsBySku, normalizeSku } = require("./productIdentity");
+const { absoluteProductImageUrl } = require("./productMedia");
+const { understandCustomerMessage } = require("./messageUnderstanding");
 
 const LANGUAGE_NAMES = { en: "English", si: "සිංහල", ta: "தமிழ்" };
 const LANGUAGE_SUGGESTIONS = [
@@ -27,7 +30,7 @@ const CART_LABELS = {
 const COPY = {
   en: {
     chooseLanguage: "Please choose your preferred language:",
-    welcome: "English selected. You can ask a product question or type ‘order’ to place an order.",
+    welcome: "English selected. Choose a product to review its details, then use the Place order button when you are ready.",
     askProduct: "Which product would you like to order? Choose an available product or send its name or SKU.",
     noProducts: "There are no products available for ordering right now.",
     noProductMatch: "I couldn't identify that product. Please send its name, SKU, or list number.",
@@ -40,7 +43,7 @@ const COPY = {
     askAddress: "What is the delivery address?",
     askPayment: "Choose a payment method:",
     confirm: "Please check your order:\n{summary}\n\nChoose Confirm to place it, Change to start again, or Cancel.",
-    cancelled: "The draft order was cancelled. You can type ‘order’ whenever you're ready.",
+    cancelled: "The draft order was cancelled. Choose a product and use its Place order button whenever you're ready.",
     restarted: "Let's update the order. Which product would you like?",
     confirmed: "Thank you. Your order {orderNumber} has been placed successfully. The seller will process it soon.",
     unavailable: "That option is currently unavailable. Please choose another one.",
@@ -56,7 +59,7 @@ const COPY = {
   },
   si: {
     chooseLanguage: "කරුණාකර ඔබ කැමති භාෂාව තෝරන්න:",
-    welcome: "සිංහල තෝරා ගත්තා. භාණ්ඩයක් ගැන ප්‍රශ්නයක් අසන්න හෝ ඇණවුමක් කිරීමට ‘ඇණවුම’ ලෙස එවන්න.",
+    welcome: "සිංහල තෝරා ගත්තා. භාණ්ඩයක් තෝරා එහි විස්තර බලන්න. සූදානම් වූ විට ඇණවුම් බොත්තම තෝරන්න.",
     askProduct: "ඔබ ඇණවුම් කිරීමට කැමති භාණ්ඩය තෝරන්න, නැතහොත් එහි නම හෝ SKU අංකය එවන්න.",
     noProducts: "දැනට ඇණවුම් කිරීමට භාණ්ඩ නොමැත.",
     noProductMatch: "එම භාණ්ඩය හඳුනාගත නොහැකි විය. නම, SKU අංකය හෝ ලැයිස්තු අංකය එවන්න.",
@@ -68,8 +71,8 @@ const COPY = {
     askPhone: "මෙම ඇණවුම සඳහා සම්බන්ධ කරගත හැකි දුරකථන අංකය කුමක්ද?",
     askAddress: "භාණ්ඩය භාරදිය යුතු ලිපිනය කුමක්ද?",
     askPayment: "ගෙවීම් ක්‍රමයක් තෝරන්න:",
-    confirm: "කරුණාකර ඇණවුම පරීක්ෂා කරන්න:\n{summary}\n\nඇණවුම තහවුරු කිරීමට CONFIRM, වෙනස් කිරීමට CHANGE හෝ අවලංගු කිරීමට CANCEL එවන්න.",
-    cancelled: "ඇණවුම අවලංගු කළා. නැවත ඇණවුම් කිරීමට ‘ඇණවුම’ ලෙස එවන්න.",
+    confirm: "කරුණාකර ඇණවුම පරීක්ෂා කරන්න:\n{summary}\n\nතහවුරු කරන්න, වෙනස් කරන්න හෝ අවලංගු කරන්න යන විකල්පයක් තෝරන්න.",
+    cancelled: "ඇණවුම අවලංගු කළා. භාණ්ඩයක් තෝරා එහි ඇණවුම් බොත්තම භාවිතයෙන් නැවත ආරම්භ කරන්න.",
     restarted: "ඇණවුම නැවත සකස් කරමු. ඔබට අවශ්‍ය භාණ්ඩය කුමක්ද?",
     confirmed: "ස්තුතියි. ඔබගේ {orderNumber} ඇණවුම සාර්ථකව ලැබුණා. විකුණුම්කරු එය ඉක්මනින් සකසනු ඇත.",
     unavailable: "එම විකල්පය දැනට නොමැත. වෙනත් එකක් තෝරන්න.",
@@ -85,7 +88,7 @@ const COPY = {
   },
   ta: {
     chooseLanguage: "உங்களுக்கு விருப்பமான மொழியைத் தேர்ந்தெடுக்கவும்:",
-    welcome: "தமிழ் தேர்ந்தெடுக்கப்பட்டது. ஒரு தயாரிப்பைப் பற்றி கேட்கலாம் அல்லது ஆர்டர் செய்ய ‘ஆர்டர்’ என்று அனுப்பலாம்.",
+    welcome: "தமிழ் தேர்ந்தெடுக்கப்பட்டது. ஒரு தயாரிப்பைத் தேர்ந்தெடுத்து அதன் விவரங்களைப் பார்க்கவும். தயாரானதும் ஆர்டர் பொத்தானைத் தேர்ந்தெடுக்கவும்.",
     askProduct: "நீங்கள் ஆர்டர் செய்ய விரும்பும் தயாரிப்பைத் தேர்ந்தெடுக்கவும் அல்லது அதன் பெயர் அல்லது SKU-ஐ அனுப்பவும்.",
     noProducts: "தற்போது ஆர்டர் செய்ய தயாரிப்புகள் இல்லை.",
     noProductMatch: "அந்த தயாரிப்பை அடையாளம் காண முடியவில்லை. பெயர், SKU அல்லது பட்டியல் எண்ணை அனுப்பவும்.",
@@ -97,8 +100,8 @@ const COPY = {
     askPhone: "இந்த ஆர்டருக்கான தொடர்பு தொலைபேசி எண் என்ன?",
     askAddress: "டெலிவரி முகவரி என்ன?",
     askPayment: "கட்டண முறையைத் தேர்ந்தெடுக்கவும்:",
-    confirm: "உங்கள் ஆர்டரைச் சரிபார்க்கவும்:\n{summary}\n\nஆர்டர் செய்ய CONFIRM, மாற்ற CHANGE அல்லது ரத்து செய்ய CANCEL என பதிலளிக்கவும்.",
-    cancelled: "வரைவு ஆர்டர் ரத்து செய்யப்பட்டது. மீண்டும் தொடங்க ‘ஆர்டர்’ என்று அனுப்பவும்.",
+    confirm: "உங்கள் ஆர்டரைச் சரிபார்க்கவும்:\n{summary}\n\nஉறுதிப்படுத்து, மாற்று அல்லது ரத்து என்ற விருப்பத்தைத் தேர்ந்தெடுக்கவும்.",
+    cancelled: "வரைவு ஆர்டர் ரத்து செய்யப்பட்டது. ஒரு தயாரிப்பைத் தேர்ந்தெடுத்து அதன் ஆர்டர் பொத்தானைப் பயன்படுத்தி மீண்டும் தொடங்கவும்.",
     restarted: "ஆர்டரை மீண்டும் அமைப்போம். எந்த தயாரிப்பு வேண்டும்?",
     confirmed: "நன்றி. உங்கள் {orderNumber} ஆர்டர் வெற்றிகரமாக பதிவு செய்யப்பட்டது. விற்பனையாளர் விரைவில் செயல்படுத்துவார்.",
     unavailable: "அந்த விருப்பம் தற்போது கிடைக்கவில்லை. வேறொன்றைத் தேர்ந்தெடுக்கவும்.",
@@ -134,6 +137,101 @@ function detectExplicitLanguage(value) {
   return "";
 }
 
+const SINGLISH_WORDS = new Set([
+  "ane", "balanna", "danna", "denna", "eka", "ekak", "ganna", "gnn", "kohomada",
+  "kiyada", "kiyanna", "monawada", "mata", "meka", "meke", "nadda", "naha", "ona",
+  "oyala", "puluanda", "puluwanda", "saha", "thiyenawada", "thiyena", "thiyenava",
+  "visthara", "wisthara",
+]);
+const TANGLISH_WORDS = new Set([
+  "enna", "ennaiku", "epdi", "irukka", "irukku", "kidaikuma", "konjam", "mudiyuma",
+  "nan", "naan", "pannunga", "priceu", "sollunga", "theriyuma", "ungal", "venum",
+]);
+const ENGLISH_SIGNAL_WORDS = new Set([
+  "are", "available", "buy", "can", "could", "details", "do", "have", "help", "how",
+  "i", "is", "need", "please", "price", "show", "tell", "the", "what", "which", "you",
+]);
+
+function inferMessageLanguage(value, currentLanguage = "") {
+  const original = String(value || "").normalize("NFKC");
+  const explicit = detectExplicitLanguage(original);
+  if (explicit) return { language: explicit, confidence: 1, style: "explicit" };
+  if (/\p{Script=Sinhala}/u.test(original)) return { language: "si", confidence: 1, style: "native" };
+  if (/\p{Script=Tamil}/u.test(original)) return { language: "ta", confidence: 1, style: "native" };
+
+  const tokens = original.toLowerCase().match(/[a-z]+/g) || [];
+  const singlishScore = tokens.filter((token) => SINGLISH_WORDS.has(token)).length;
+  const tanglishScore = tokens.filter((token) => TANGLISH_WORDS.has(token)).length;
+  const englishScore = tokens.filter((token) => ENGLISH_SIGNAL_WORDS.has(token)).length;
+  if (singlishScore && singlishScore >= tanglishScore) {
+    return { language: "si", confidence: singlishScore > 1 ? 0.98 : 0.9, style: "romanized" };
+  }
+  if (tanglishScore) {
+    return { language: "ta", confidence: tanglishScore > 1 ? 0.98 : 0.9, style: "romanized" };
+  }
+  if (englishScore >= 2 || (tokens.length >= 3 && englishScore >= 1)) {
+    return { language: "en", confidence: 0.9, style: "latin" };
+  }
+  return { language: currentLanguage || "en", confidence: currentLanguage ? 0.45 : 0.7, style: "unknown" };
+}
+
+function isGreetingOnly(value) {
+  return /^(?:hi+|hello+|hey+|good\s+(?:morning|afternoon|evening)|ayubowan|vanakkam|ආයුබෝවන්|வணக்கம்)[!.\s😊👋]*$/iu.test(String(value || "").trim());
+}
+
+function welcomeMessage(company, language = "en") {
+  const custom = company?.assistantSettings?.welcomeMessage?.[language];
+  if (String(custom || "").trim()) return String(custom).trim();
+  const business = String(company?.name || "our store").trim();
+  const description = String(company?.description || "").trim();
+  if (language === "si") {
+    return `ආයුබෝවන් 👋 ${business} වෙත සාදරයෙන් පිළිගනිමු!${description ? `\n\n${description}` : ""}\n\nභාණ්ඩ, මිල, විස්තර හෝ ඇණවුම් ගැන මගෙන් අහන්න පුළුවන්. ඔබ සොයන්නේ මොනවාද?`;
+  }
+  if (language === "ta") {
+    return `வணக்கம் 👋 ${business}க்கு வரவேற்கிறோம்!${description ? `\n\n${description}` : ""}\n\nதயாரிப்புகள், விலைகள், விவரங்கள் அல்லது ஆர்டர்கள் பற்றி கேட்கலாம். நீங்கள் எதைத் தேடுகிறீர்கள்?`;
+  }
+  return `Hi 👋 Welcome to ${business}!${description ? `\n\n${description}` : ""}\n\nI can help with products, prices, details and orders. What are you looking for today?`;
+}
+
+function socialIntentAnswer(intent, language = "en") {
+  const replies = {
+    en: {
+      greeting: "Hi! How can I help you today?",
+      thanks: "You're welcome! Let me know if you need anything else.",
+      goodbye: "Goodbye! Feel free to message us again whenever you need help.",
+      unclear: "I didn't understand that clearly. Could you say it another way?",
+    },
+    si: {
+      greeting: "ආයුබෝවන්! අද මම ඔබට උදව් කරන්නේ කොහොමද?",
+      thanks: "ඔබව සාදරයෙන් පිළිගන්නවා! තවත් උදව්වක් අවශ්‍ය නම් කියන්න.",
+      goodbye: "සුභ දවසක්! උදව්වක් අවශ්‍ය ඕනෑම වෙලාවක නැවත පණිවිඩයක් එවන්න.",
+      unclear: "මට ඒක පැහැදිලිව තේරුණේ නැහැ. වෙනත් විදිහකින් කියන්න පුළුවන්ද?",
+    },
+    ta: {
+      greeting: "வணக்கம்! இன்று நான் உங்களுக்கு எப்படி உதவலாம்?",
+      thanks: "வரவேற்கிறேன்! வேறு உதவி தேவைப்பட்டால் சொல்லுங்கள்.",
+      goodbye: "நன்றி! உதவி தேவைப்படும் போது மீண்டும் செய்தி அனுப்புங்கள்.",
+      unclear: "அது எனக்குத் தெளிவாகப் புரியவில்லை. வேறு விதமாகச் சொல்ல முடியுமா?",
+    },
+  };
+  return replies[language]?.[intent] || replies.en[intent] || replies.en.unclear;
+}
+
+function welcomeSuggestions(language = "en") {
+  if (language === "si") return [
+    { label: "භාණ්ඩ බලන්න", message: "තිබෙන භාණ්ඩ මොනවාද?" },
+    contactOwnerSuggestion(language),
+  ];
+  if (language === "ta") return [
+    { label: "தயாரிப்புகளைப் பார்க்க", message: "என்ன தயாரிப்புகள் உள்ளன?" },
+    contactOwnerSuggestion(language),
+  ];
+  return [
+    { label: "Browse products", message: "Show me all products" },
+    contactOwnerSuggestion(language),
+  ];
+}
+
 function localizedText(value, language = "en") {
   if (!value) return "";
   return value[language] || value.en || value.si || value.ta || "";
@@ -143,6 +241,17 @@ function isOrderIntent(text) {
   return /\b(order|buy|purchase|checkout)\b/i.test(text)
     || /(ඇණවුම|මිලදී|ගන්න)/u.test(text)
     || /(ஆர்டர்|வாங்க|கொள்முதல்)/u.test(text);
+}
+
+const ORDER_START_ACTION_PREFIX = "__pentarix_order_start__:";
+
+function parseCommerceAction(text) {
+  const value = String(text || "").trim();
+  if (value.startsWith(ORDER_START_ACTION_PREFIX)) {
+    const productId = value.slice(ORDER_START_ACTION_PREFIX.length).trim();
+    if (productId) return { type: "order_start", productId };
+  }
+  return null;
 }
 
 function isCancel(text) {
@@ -280,22 +389,96 @@ function catalogProductNames(product) {
   ].map((value) => String(value || "").trim()).filter(Boolean))];
 }
 
-function resolveCatalogProduct(catalog, text) {
+const PRODUCT_SEARCH_STOP_WORDS = new Set([
+  "a", "an", "and", "any", "are", "available", "can", "do", "does", "for", "have",
+  "i", "in", "is", "item", "items", "me", "of", "please", "product", "products",
+  "show", "some", "the", "to", "u", "we", "with", "you", "your",
+]);
+
+function singularSearchWord(word) {
+  if (word.length > 4 && word.endsWith("ies")) return `${word.slice(0, -3)}y`;
+  if (word.length > 4 && word.endsWith("sses")) return word.slice(0, -2);
+  if (word.length > 3 && word.endsWith("s") && !word.endsWith("ss")) return word.slice(0, -1);
+  return word;
+}
+
+function productSearchTokens(value, { removeStopWords = true } = {}) {
+  return String(value || "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .split(/\s+/u)
+    .filter(Boolean)
+    .map(singularSearchWord)
+    .filter((word) => !removeStopWords || !PRODUCT_SEARCH_STOP_WORDS.has(word));
+}
+
+function searchTokenMatches(queryToken, productToken) {
+  if (queryToken === productToken) return true;
+  if (queryToken.length < 4 || productToken.length < 4) return false;
+  if (productToken.startsWith(queryToken) || queryToken.startsWith(productToken)) return true;
+  const maximumDistance = Math.max(queryToken.length, productToken.length) >= 7 ? 2 : 1;
+  if (Math.abs(queryToken.length - productToken.length) > maximumDistance) return false;
+  return editDistance(queryToken, productToken) <= maximumDistance;
+}
+
+function editDistance(left, right) {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    const current = [leftIndex];
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const cost = left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1;
+      current[rightIndex] = Math.min(
+        current[rightIndex - 1] + 1,
+        previous[rightIndex] + 1,
+        previous[rightIndex - 1] + cost
+      );
+    }
+    previous.splice(0, previous.length, ...current);
+  }
+  return previous[right.length];
+}
+
+function findCatalogProducts(catalog, text) {
   const products = Array.isArray(catalog?.products) ? catalog.products : [];
   const index = choiceIndex(text, products.length);
-  if (index >= 0) return products[index];
+  if (index >= 0) return [products[index]];
 
   const normalizedMessage = normalizeIdentifier(text);
-  if (!normalizedMessage) return null;
-  const matchingProducts = products.filter((product) => {
-    const identifiers = catalogProductNames(product)
-      .map(normalizeIdentifier)
-      .filter((value) => value.length >= 4);
-    return identifiers.some((identifier) => (
-      normalizedMessage === identifier
-      || normalizedMessage.includes(identifier)
+  if (!normalizedMessage) return [];
+  const exactMatches = products.filter((product) => catalogProductNames(product)
+    .map(normalizeIdentifier)
+    .filter((value) => value.length >= 3)
+    .some((identifier) => normalizedMessage === identifier || normalizedMessage.includes(identifier)));
+  if (exactMatches.length) return exactMatches;
+
+  const queryTokens = productSearchTokens(text);
+  if (!queryTokens.length) return [];
+  return products.filter((product) => {
+    const productTokens = catalogProductNames(product)
+      .flatMap((value) => productSearchTokens(value, { removeStopWords: false }));
+    return queryTokens.some((queryToken) => productTokens.some(
+      (productToken) => searchTokenMatches(queryToken, productToken)
     ));
   });
+}
+
+function isBareProductLookup(catalog, text, matches) {
+  const value = normalize(text);
+  if (/\b(?:about|clean|compare|details?|features?|how|install|specifications?|use|warranty|why)\b/iu.test(value)) {
+    return false;
+  }
+  const queryTokens = productSearchTokens(text);
+  const productTokens = matches.flatMap((product) => catalogProductNames(product)
+    .flatMap((name) => productSearchTokens(name, { removeStopWords: false })));
+  return queryTokens.length > 0 && queryTokens.every((queryToken) => (
+    productTokens.some((productToken) => searchTokenMatches(queryToken, productToken))
+  ));
+}
+
+function resolveCatalogProduct(catalog, text) {
+  const matchingProducts = findCatalogProducts(catalog, text);
   return matchingProducts.length === 1 ? matchingProducts[0] : null;
 }
 
@@ -303,21 +486,27 @@ async function loadProductCatalog(companyId, language = "en") {
   const records = await Product.find({ companyId, isActive: true })
     .sort({ createdAt: 1, _id: 1 })
     .lean();
+  const uniqueRecords = dedupeProductsBySku(records);
   return {
-    products: records.map((product) => ({
+    products: uniqueRecords.map((product) => ({
       productId: String(product._id),
-      sku: product.sku || "",
+      sku: normalizeSku(product.sku),
       name: localizedText(product.name, language),
       alternateNames: Object.values(product.name || {}).filter(Boolean),
       price: Number(product.price || 0),
       currency: product.currency || "LKR",
       stock: product.stock,
+      image: product.image?.fileName ? {
+        url: absoluteProductImageUrl(companyId, product._id, product.image.fileName),
+        altText: product.image.altText || localizedText(product.name, language),
+        mimeType: product.image.mimeType || "image/webp",
+      } : null,
       variants: (product.variants || [])
         .filter((variant) => variant.isActive !== false)
         .map((variant) => ({
           id: String(variant._id || ""),
           name: variant.name,
-          sku: variant.sku || "",
+          sku: normalizeSku(variant.sku),
           priceAdjustment: Number(variant.priceAdjustment || 0),
           stock: variant.stock,
         })),
@@ -326,8 +515,11 @@ async function loadProductCatalog(companyId, language = "en") {
 }
 
 function isCatalogListIntent(text) {
-  const value = normalize(text);
+  const value = normalize(text)
+    .replace(/\b(?:prodiuct|producrt|prodcut|prodcuts|pruduct)s?\b/giu, "product");
   return /^(?:products?|items?|catalog(?:ue)?)$/iu.test(value)
+    || /\b(?:all|available)\s+(?:products?|items?)\b/iu.test(value)
+    || /\b(?:give|send)\b.{0,30}\b(?:products?|items?|catalog(?:ue)?)\b/iu.test(value)
     || /\b(?:what|which|show|list|see|view)\b.{0,30}\b(?:products?|items?|catalog(?:ue)?)\b/iu.test(value)
     || /\b(?:products?|items?|catalog(?:ue)?)\b.{0,30}\b(?:have|available|sell|offer)\b/iu.test(value)
     || /\bwhat\s+do\s+(?:you|u)\s+(?:have|sell|offer)\b/iu.test(value)
@@ -341,16 +533,146 @@ function isCatalogListIntent(text) {
 
 function isCommercialProductIntent(text) {
   const value = normalize(text);
-  return /\b(?:price|cost|how\s+much|available|availability|in\s+stock|do\s+(?:you|u)\s+have|sell|variants?|options?|colou?rs?|sizes?)\b/iu.test(value)
+  return /\b(?:price|cost|how\s+much|available|availability|in\s+stock|do\s+(?:you|u)\s+have|sell|variants?|options?|colou?rs?|sizes?|images?|photos?|pictures?|show\s+me|look\s+like)\b/iu.test(value)
     || /(?:මිල|කීයද|තිබේද|තියෙනවාද|විකුණනවාද|විකල්ප|වර්ණ|ප්‍රමාණ)/u.test(value)
     || /(?:விலை|எவ்வளவு|கிடைக்குமா|உள்ளதா|விற்கிறீர்களா|விருப்பங்கள்|நிறங்கள்|அளவுகள்)/u.test(value);
 }
 
 function productSuggestions(catalog, language, { order = false } = {}) {
   return (catalog?.products || []).slice(0, 12).map((product) => ({
-    label: `${product.name} · ${formatMoney(product.price, product.currency)}`,
-    message: order ? product.name : `Tell me about ${product.name}`,
+    label: `${product.name}${product.sku ? ` (${product.sku})` : ""} · ${formatMoney(product.price, product.currency)}`,
+    message: order ? (product.sku || product.name) : productDetailsMessage(product, language),
   }));
+}
+
+function productDetailsMessage(product, language = "en") {
+  const reference = product?.sku || product?.name || "";
+  if (language === "si") return `${reference} ගැන විස්තර සිංහලෙන් කියන්න`;
+  if (language === "ta") return `${reference} பற்றிய விவரங்களை தமிழில் சொல்லுங்கள்`;
+  return `Tell me more about ${reference}`;
+}
+
+function placeOrderLabel(language = "en") {
+  return language === "si"
+    ? "ඇණවුම ලබා දෙන්න"
+    : language === "ta"
+      ? "ஆர்டர் செய்யவும்"
+      : "Place order";
+}
+
+function placeOrderSuggestion(product, language = "en") {
+  return { label: placeOrderLabel(language), message: `${ORDER_START_ACTION_PREFIX}${product.productId}` };
+}
+
+function withPlaceOrderSuggestion(suggestions = [], product, language = "en") {
+  if (!product) return suggestions;
+  const orderAction = placeOrderSuggestion(product, language);
+  if (suggestions.some((item) => normalize(item?.message) === normalize(orderAction.message))) return suggestions;
+  return [...suggestions, orderAction];
+}
+
+function contactOwnerSuggestion(language = "en") {
+  const label = language === "si"
+    ? "වෙළඳසැල් හිමිකරු අමතන්න"
+    : language === "ta"
+      ? "கடை உரிமையாளரைத் தொடர்புகொள்ளவும்"
+      : "Contact shop owner";
+  return { label, message: "Contact shop owner" };
+}
+
+function withContactOwnerSuggestion(suggestions = [], language = "en") {
+  if (suggestions.some((item) => normalize(item?.message) === "contact shop owner")) return suggestions;
+  return [...suggestions, contactOwnerSuggestion(language)];
+}
+
+function isContactOwnerIntent(text) {
+  const value = normalize(text);
+  return /^(?:contact|call|speak\s+(?:to|with)|talk\s+(?:to|with))\s+(?:the\s+)?(?:shop\s+)?(?:owner|seller|staff|human|person)$/iu.test(value)
+    || /^contact\s+shop\s+owner$/iu.test(value);
+}
+
+function contactOwnerAnswer(company, language = "en") {
+  const phone = String(company?.assistantSettings?.supportPhone || company?.shippingDetails?.phone || "").trim();
+  const whatsapp = String(company?.assistantSettings?.supportWhatsApp || "").trim();
+  const hours = String(company?.assistantSettings?.businessHours || "").trim();
+  const business = String(company?.name || company?.shippingDetails?.senderName || "the shop").trim();
+  const extra = [
+    whatsapp && whatsapp !== phone ? `WhatsApp: ${whatsapp}` : "",
+    hours ? (language === "si" ? `සේවා වේලාවන්: ${hours}` : language === "ta" ? `சேவை நேரம்: ${hours}` : `Business hours: ${hours}`) : "",
+  ].filter(Boolean).join("\n");
+  if (phone) {
+    if (language === "si") return `${business} අමතන්න: ${phone}${extra ? `\n${extra}` : ""}\n\nඔබගේ සංවාදයද වෙළඳසැල් කණ්ඩායමට පරීක්ෂා කිරීමට සුරකින ලදී.`;
+    if (language === "ta") return `${business} ஐ தொடர்புகொள்ள: ${phone}${extra ? `\n${extra}` : ""}\n\nஉங்கள் உரையாடலும் கடை குழுவின் பார்வைக்காக சேமிக்கப்பட்டுள்ளது.`;
+    return `You can contact ${business} on ${phone}.${extra ? `\n${extra}` : ""}\n\nYour conversation has also been saved for the shop team to review.`;
+  }
+  if (whatsapp) {
+    const whatsappExtra = hours
+      ? (language === "si" ? `\nසේවා වේලාවන්: ${hours}` : language === "ta" ? `\nசேவை நேரம்: ${hours}` : `\nBusiness hours: ${hours}`)
+      : "";
+    return language === "si"
+      ? `${business} WhatsApp: ${whatsapp}${whatsappExtra}`
+      : language === "ta"
+        ? `${business} WhatsApp: ${whatsapp}${whatsappExtra}`
+        : `You can contact ${business} on WhatsApp: ${whatsapp}${whatsappExtra}`;
+  }
+  if (language === "si") return "වෙළඳසැලේ දුරකථන අංකය තවම සකසා නැත. ඔබගේ සංවාදය වෙළඳසැල් කණ්ඩායමට පරීක්ෂා කිරීමට සුරකින ලදී.";
+  if (language === "ta") return "கடையின் தொலைபேசி எண் இன்னும் அமைக்கப்படவில்லை. உங்கள் உரையாடல் கடை குழுவின் பார்வைக்காக சேமிக்கப்பட்டுள்ளது.";
+  return "The shop contact number has not been configured yet. Your conversation has been saved for the shop team to review.";
+}
+
+function rememberCatalogProduct(conversation, product) {
+  if (!product) return;
+  const names = [product.name, ...(product.alternateNames || [])].filter(Boolean);
+  const modelIds = [product.sku].filter(Boolean);
+  conversation.ragContext = {
+    productNames: [...new Set([...names, ...(conversation.ragContext?.productNames || [])])].slice(0, 8),
+    modelIds: [...new Set([...modelIds, ...(conversation.ragContext?.modelIds || [])])].slice(0, 8),
+    documentIds: conversation.ragContext?.documentIds || [],
+  };
+}
+
+function isContextualProductReference(value) {
+  return /\b(?:it|its|that|this|the\s+(?:one|item|product|model)|same\s+(?:one|item|product|model))\b/iu.test(String(value || ""));
+}
+
+function productFromConversationContext(catalog, conversation, message, { force = false } = {}) {
+  if (!force && !isContextualProductReference(message)) return null;
+  const products = catalog?.products || [];
+  const modelIds = conversation.ragContext?.modelIds || [];
+  for (const modelId of modelIds) {
+    const product = products.find((item) => (
+      normalizeIdentifier(item.sku) === normalizeIdentifier(modelId)
+    ));
+    if (product) return product;
+  }
+  const productNames = conversation.ragContext?.productNames || [];
+  for (const productName of productNames) {
+    const normalizedName = normalizeIdentifier(productName);
+    const product = products.find((item) => (
+      catalogProductNames(item).some((name) => normalizeIdentifier(name) === normalizedName)
+    ));
+    if (product) return product;
+  }
+  return null;
+}
+
+function productFromUnderstanding(catalog, conversation, understanding) {
+  if (!understanding) return null;
+  const products = catalog?.products || [];
+  if (understanding.productSku) {
+    const sku = normalizeSku(understanding.productSku);
+    const exact = products.find((product) => normalizeSku(product.sku) === sku);
+    if (exact) return exact;
+  }
+  for (const query of [understanding.productQuery, understanding.normalizedMessage]) {
+    if (!String(query || "").trim()) continue;
+    const matches = findCatalogProducts(catalog, query);
+    if (matches.length === 1) return matches[0];
+  }
+  if (understanding.refersToPreviousProduct) {
+    return productFromConversationContext(catalog, conversation, "", { force: true });
+  }
+  return null;
 }
 
 function catalogListAnswer(catalog, language) {
@@ -361,10 +683,10 @@ function catalogListAnswer(catalog, language) {
       ? "தற்போது கிடைக்கும் தயாரிப்புகள்:"
       : "Here are the products currently available:";
   const help = language === "si"
-    ? "වැඩි විස්තර සඳහා භාණ්ඩයක් තෝරන්න, නැතහොත් ඇණවුම් කිරීමට ‘ඇණවුම’ එවන්න."
+    ? "විස්තර බැලීමට භාණ්ඩයක් තෝරන්න. සූදානම් වූ විට ඇණවුම ලබා දෙන්න බොත්තම තෝරන්න."
     : language === "ta"
-      ? "மேலும் விவரங்களுக்கு ஒரு தயாரிப்பைத் தேர்ந்தெடுக்கவும் அல்லது ஆர்டர் செய்ய ‘order’ என அனுப்பவும்."
-      : "Choose a product for more details, or send ‘order’ to place an order.";
+      ? "விவரங்களைப் பார்க்க ஒரு தயாரிப்பைத் தேர்ந்தெடுக்கவும். தயாரானதும் ஆர்டர் செய்யவும் பொத்தானைத் தேர்ந்தெடுக்கவும்."
+      : "Choose a product to review its details, then select Place order when you are ready.";
   return `${heading}\n\n${products.map((product, index) => (
     `${index + 1}. ${product.name} (${product.sku}) — ${formatMoney(product.price, product.currency)}`
   )).join("\n")}\n\n${help}`;
@@ -629,6 +951,11 @@ function selectProductForOrder(state, product) {
   return state;
 }
 
+function createOrderStateForProduct(product) {
+  const state = { stage: "awaiting_product", draft: { items: [] }, updatedAt: new Date() };
+  return selectProductForOrder(state, product);
+}
+
 async function refreshDraftProduct(companyId, draft, language) {
   if (!draft.productId) return { available: false, priceChanged: false };
   const product = await Product.findOne({
@@ -708,14 +1035,42 @@ async function processCommerceMessage({ companyId, sessionId, channel, text, cus
   if (!company || !company.isActive) throw new Error("Company is unavailable");
   const conversation = await getConversation({ companyId, sessionId, channel, customer });
   const message = String(text || "").trim();
-  conversation.messages.push({ role: "user", content: message });
+  const firstCustomerTurn = !conversation.messages.some((item) => item.role === "user");
+  const commerceAction = parseCommerceAction(message);
+  const displayedMessage = commerceAction?.type === "order_start"
+    ? placeOrderLabel(conversation.preferredLanguage || "en")
+    : message;
+  conversation.messages.push({ role: "user", content: displayedMessage });
   const currentState = conversation.commerceState || { stage: "browsing", draft: {} };
+  let understanding = null;
+  let understandingCatalog = null;
+  if (!commerceAction) {
+    understandingCatalog = await loadProductCatalog(
+      companyId,
+      conversation.preferredLanguage || "en"
+    );
+    const activeProduct = productFromConversationContext(
+      understandingCatalog,
+      conversation,
+      "",
+      { force: true }
+    );
+    understanding = await understandCustomerMessage({
+      companyId,
+      message,
+      currentLanguage: conversation.preferredLanguage || "",
+      orderStage: currentState.stage || "browsing",
+      recentMessages: conversation.messages.slice(0, -1),
+      activeProduct,
+      catalog: understandingCatalog,
+    });
+  }
 
   if (!conversation.preferredLanguage) {
-    const requestedLanguage = detectLanguage(message);
-    if (!requestedLanguage) {
-      return addReply(conversation, COPY.en.chooseLanguage, { suggestions: LANGUAGE_SUGGESTIONS });
-    }
+    const inferred = inferMessageLanguage(message);
+    const requestedLanguage = understanding?.confidence >= 0.55
+      ? understanding.language
+      : detectLanguage(message) || inferred.language || "en";
     conversation.preferredLanguage = requestedLanguage;
     if (currentState.stage === "awaiting_language") {
       currentState.stage = currentState.draft?._resumeStage || "browsing";
@@ -736,34 +1091,71 @@ async function processCommerceMessage({ companyId, sessionId, channel, text, cus
         suggestions: response.suggestions,
       });
     }
-    resetDraft(conversation);
-    return addReply(conversation, COPY[requestedLanguage].welcome, { language: requestedLanguage });
+    if (firstCustomerTurn && (
+      (understanding?.confidence >= 0.6 && understanding.intent === "greeting")
+      || isGreetingOnly(message)
+    )) {
+      resetDraft(conversation);
+      return addReply(conversation, welcomeMessage(company, requestedLanguage), {
+        language: requestedLanguage,
+        suggestions: welcomeSuggestions(requestedLanguage),
+      });
+    }
   }
 
   let language = conversation.preferredLanguage;
   let copy = COPY[language] || COPY.en;
   const state = conversation.commerceState || { stage: "browsing", draft: {} };
-  const requestedLanguage = detectExplicitLanguage(message);
+  const inferredLanguage = inferMessageLanguage(message, language);
+  const requestedLanguage = detectExplicitLanguage(message)
+    || (understanding?.confidence >= 0.65 ? understanding.language : "")
+    || (inferredLanguage.confidence >= 0.88 ? inferredLanguage.language : "");
   if (requestedLanguage) {
     if (requestedLanguage !== language) {
       conversation.preferredLanguage = requestedLanguage;
       language = requestedLanguage;
       copy = COPY[language];
     }
-    const catalog = state.stage === "awaiting_product"
-      ? await loadProductCatalog(companyId, language)
-      : { products: [] };
-    const response = stageResponse(state, copy, language, catalog, company.commerceSettings || {});
-    return addReply(conversation, response.answer, {
-      language,
-      suggestions: response.suggestions,
-    });
+    if (detectExplicitLanguage(message)) {
+      const catalog = state.stage === "awaiting_product"
+        ? await loadProductCatalog(companyId, language)
+        : { products: [] };
+      const response = stageResponse(state, copy, language, catalog, company.commerceSettings || {});
+      return addReply(conversation, response.answer, {
+        language,
+        suggestions: response.suggestions,
+      });
+    }
   }
 
   const draft = state.draft || {};
   const settings = company.commerceSettings || {};
+  const trustedUnderstanding = understanding?.confidence >= 0.6 ? understanding : null;
+  const trustedControlIntent = understanding?.confidence >= 0.8 ? understanding.intent : "";
 
-  if (isLanguageRequest(message)) {
+  if (commerceAction?.type === "order_start") {
+    const catalog = await loadProductCatalog(companyId, language);
+    const product = catalog.products.find((item) => item.productId === commerceAction.productId);
+    if (!settings.orderingEnabled || !product) {
+      resetDraft(conversation);
+      return addReply(conversation, product ? copy.noProducts : copy.noProductMatch, {
+        suggestions: productSuggestions(catalog, language),
+      });
+    }
+    // Build the complete state before assigning it to the Mongoose subdocument.
+    // Assigning first and mutating the original object can persist the earlier
+    // awaiting_product stage even though this request displays variant choices.
+    const orderState = createOrderStateForProduct(product);
+    conversation.commerceState = orderState;
+    const response = stageResponse(orderState, copy, language, catalog, settings);
+    return addReply(conversation, response.answer, { suggestions: response.suggestions });
+  }
+
+  if (trustedUnderstanding?.intent === "contact_owner" || isContactOwnerIntent(message)) {
+    return addReply(conversation, contactOwnerAnswer(company, language), { language });
+  }
+
+  if (trustedUnderstanding?.intent === "change_language" || isLanguageRequest(message)) {
     draft._resumeStage = state.stage;
     state.stage = "awaiting_language";
     state.draft = draft;
@@ -774,7 +1166,7 @@ async function processCommerceMessage({ companyId, sessionId, channel, text, cus
     });
   }
 
-  if (state.stage !== "browsing" && isHelp(message)) {
+  if (state.stage !== "browsing" && (trustedUnderstanding?.intent === "help" || isHelp(message))) {
     const catalog = state.stage === "awaiting_product"
       ? await loadProductCatalog(companyId, language)
       : { products: [] };
@@ -788,12 +1180,12 @@ async function processCommerceMessage({ companyId, sessionId, channel, text, cus
     });
   }
 
-  if (state.stage !== "browsing" && isCancel(message)) {
+  if (state.stage !== "browsing" && (trustedControlIntent === "cancel_order" || isCancel(message))) {
     resetDraft(conversation);
     return addReply(conversation, copy.cancelled);
   }
 
-  if (state.stage !== "browsing" && isBack(message)) {
+  if (state.stage !== "browsing" && (trustedControlIntent === "go_back" || isBack(message))) {
     if (state.stage === "awaiting_product" && (draft.items || []).length) {
       clearCurrentItem(draft);
       state.stage = "awaiting_cart_action";
@@ -811,7 +1203,8 @@ async function processCommerceMessage({ companyId, sessionId, channel, text, cus
     return addReply(conversation, response.answer, { suggestions: response.suggestions });
   }
 
-  if (state.stage !== "browsing" && state.stage !== "awaiting_confirmation" && isChange(message)) {
+  if (state.stage !== "browsing" && state.stage !== "awaiting_confirmation"
+    && (trustedControlIntent === "change_order" || isChange(message))) {
     if ((draft.items || []).length) {
       clearCurrentItem(draft);
       state.stage = "awaiting_cart_action";
@@ -828,39 +1221,104 @@ async function processCommerceMessage({ companyId, sessionId, channel, text, cus
   }
 
   if (state.stage === "browsing") {
-    const catalog = await loadProductCatalog(companyId, language);
-    if (isCatalogListIntent(message)) {
+    const catalog = understandingCatalog || await loadProductCatalog(companyId, language);
+    if (["greeting", "thanks", "goodbye"].includes(trustedUnderstanding?.intent)) {
+      return addReply(conversation, socialIntentAnswer(trustedUnderstanding.intent, language), { language });
+    }
+    if (trustedUnderstanding?.intent === "unclear" && trustedUnderstanding.confidence >= 0.7) {
+      return addReply(conversation, socialIntentAnswer("unclear", language), {
+        language,
+        suggestions: [contactOwnerSuggestion(language)],
+      });
+    }
+    if (trustedUnderstanding?.intent === "list_products" || isCatalogListIntent(message)) {
       if (!catalog.products.length) return addReply(conversation, copy.noProducts);
       return addReply(conversation, catalogListAnswer(catalog, language), {
         suggestions: productSuggestions(catalog, language),
       });
     }
-    const mentionedProduct = resolveCatalogProduct(catalog, message);
-    if (mentionedProduct && isCommercialProductIntent(message)) {
+    const semanticProduct = productFromUnderstanding(catalog, conversation, trustedUnderstanding);
+    let matchingProducts = findCatalogProducts(catalog, message);
+    if (!matchingProducts.length && trustedUnderstanding?.productQuery) {
+      matchingProducts = findCatalogProducts(catalog, trustedUnderstanding.productQuery);
+    }
+    const mentionedProduct = semanticProduct || (matchingProducts.length === 1
+      ? matchingProducts[0]
+      : matchingProducts.length === 0
+        ? productFromConversationContext(catalog, conversation, message)
+        : null);
+    if (!semanticProduct && matchingProducts.length > 1) {
+      const matchingCatalog = { products: matchingProducts };
+      return addReply(conversation, catalogListAnswer(matchingCatalog, language), {
+        suggestions: productSuggestions(matchingCatalog, language),
+      });
+    }
+    if (mentionedProduct) rememberCatalogProduct(conversation, mentionedProduct);
+    if (mentionedProduct && trustedUnderstanding?.intent === "product_details") {
+      await conversation.save();
+      return {
+        handled: false,
+        conversation,
+        language,
+        catalogProduct: mentionedProduct,
+        understanding: trustedUnderstanding,
+        normalizedMessage: trustedUnderstanding.normalizedMessage || message,
+      };
+    }
+    if (mentionedProduct && (
+      trustedUnderstanding?.intent === "product_availability"
+      || trustedUnderstanding?.intent === "product_order_interest"
+      || isCommercialProductIntent(message)
+    )) {
       return addReply(conversation, commercialProductAnswer(mentionedProduct, language), {
+        media: mentionedProduct.image ? [mentionedProduct.image] : [],
         suggestions: [
-          { label: language === "si" ? "වැඩි විස්තර" : language === "ta" ? "மேலும் விவரங்கள்" : "More details", message: `Tell me more about ${mentionedProduct.name}` },
-          { label: language === "si" ? "ඇණවුම් කරන්න" : language === "ta" ? "ஆர்டர் செய்" : "Order", message: `Order ${mentionedProduct.name}` },
+          { label: language === "si" ? "වැඩි විස්තර" : language === "ta" ? "மேலும் விவரங்கள்" : "More details", message: productDetailsMessage(mentionedProduct, language) },
+          placeOrderSuggestion(mentionedProduct, language),
         ],
       });
     }
-    if (!settings.orderingEnabled || !isOrderIntent(message)) {
+    if (mentionedProduct && isBareProductLookup(catalog, message, matchingProducts)) {
+      return addReply(conversation, commercialProductAnswer(mentionedProduct, language), {
+        media: mentionedProduct.image ? [mentionedProduct.image] : [],
+        suggestions: [
+          { label: language === "si" ? "වැඩි විස්තර" : language === "ta" ? "மேலும் விவரங்கள்" : "More details", message: productDetailsMessage(mentionedProduct, language) },
+          placeOrderSuggestion(mentionedProduct, language),
+        ],
+      });
+    }
+    if (mentionedProduct && (trustedUnderstanding?.intent === "product_order_interest" || isOrderIntent(message))) {
+      return addReply(conversation, commercialProductAnswer(mentionedProduct, language), {
+        media: mentionedProduct.image ? [mentionedProduct.image] : [],
+        suggestions: [
+          placeOrderSuggestion(mentionedProduct, language),
+          {
+            label: language === "si" ? "වැඩි විස්තර" : language === "ta" ? "மேலும் விவரங்கள்" : "More details",
+            message: productDetailsMessage(mentionedProduct, language),
+          },
+        ],
+      });
+    }
+    const hasOrderInterest = trustedUnderstanding?.intent === "product_order_interest" || isOrderIntent(message);
+    if (!settings.orderingEnabled || !hasOrderInterest) {
       await conversation.save();
-      return { handled: false, conversation, language, catalogProduct: mentionedProduct || null };
+      return {
+        handled: false,
+        conversation,
+        language,
+        catalogProduct: mentionedProduct || null,
+        understanding: trustedUnderstanding,
+        normalizedMessage: trustedUnderstanding?.normalizedMessage || message,
+      };
     }
     if (!catalog.products.length) {
       return addReply(conversation, copy.noProducts);
     }
-    state.stage = "awaiting_product";
-    state.draft = { items: [] };
-    conversation.commerceState = state;
-    if (mentionedProduct) {
-      selectProductForOrder(state, mentionedProduct);
-      const response = stageResponse(state, copy, language, catalog, settings);
-      return addReply(conversation, response.answer, { suggestions: response.suggestions });
-    }
-    const response = stageResponse(state, copy, language, catalog, settings);
-    return addReply(conversation, response.answer, { suggestions: response.suggestions });
+    // Natural-language buying interest shows the catalogue and Place order
+    // actions. Only an explicit signed UI action starts order collection.
+    return addReply(conversation, catalogListAnswer(catalog, language), {
+      suggestions: productSuggestions(catalog, language),
+    });
   }
 
   if (state.stage === "awaiting_cart_action") {
@@ -925,12 +1383,31 @@ async function processCommerceMessage({ companyId, sessionId, channel, text, cus
   }
 
   if (state.stage === "awaiting_product") {
-    const catalog = await loadProductCatalog(companyId, language);
-    const product = resolveCatalogProduct(catalog, message);
+    const catalog = understandingCatalog || await loadProductCatalog(companyId, language);
+    const understoodProduct = productFromUnderstanding(catalog, conversation, trustedUnderstanding);
+    if (!understoodProduct && (trustedUnderstanding?.intent === "product_order_interest" || isOrderIntent(message))) {
+      const response = stageResponse(state, copy, language, catalog, settings);
+      return addReply(conversation, response.answer, { suggestions: response.suggestions });
+    }
+    const product = understoodProduct || resolveCatalogProduct(catalog, message);
     if (!product) {
       const response = stageResponse(state, copy, language, catalog, settings);
       return addReply(conversation, copy.noProductMatch, {
         suggestions: response.suggestions,
+      });
+    }
+    rememberCatalogProduct(conversation, product);
+    if (!(draft.items || []).length) {
+      resetDraft(conversation);
+      return addReply(conversation, commercialProductAnswer(product, language), {
+        media: product.image ? [product.image] : [],
+        suggestions: [
+          placeOrderSuggestion(product, language),
+          {
+            label: language === "si" ? "වැඩි විස්තර" : language === "ta" ? "மேலும் விவரங்கள்" : "More details",
+            message: productDetailsMessage(product, language),
+          },
+        ],
       });
     }
     selectProductForOrder(state, product);
@@ -1186,6 +1663,9 @@ module.exports = {
   LANGUAGE_NAMES,
   detectLanguage,
   detectExplicitLanguage,
+  inferMessageLanguage,
+  isGreetingOnly,
+  welcomeMessage,
   isBack,
   isCancel,
   isLanguageRequest,
@@ -1197,6 +1677,8 @@ module.exports = {
   localizedText,
   isCatalogListIntent,
   isCommercialProductIntent,
+  parseCommerceAction,
+  isContactOwnerIntent,
   isAddAnother,
   isCheckout,
   isRemoveItem,
@@ -1205,6 +1687,14 @@ module.exports = {
   addCurrentItemToCart,
   cartTotals,
   cartSummary,
+  commercialProductAnswer,
+  productDetailsMessage,
+  contactOwnerSuggestion,
+  createOrderStateForProduct,
+  placeOrderSuggestion,
+  withPlaceOrderSuggestion,
+  withContactOwnerSuggestion,
+  findCatalogProducts,
   resolveCatalogProduct,
   processCommerceMessage,
 };

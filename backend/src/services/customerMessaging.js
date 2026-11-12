@@ -1,8 +1,15 @@
-const { processCommerceMessage } = require("./commerce");
+const {
+  commercialProductAnswer,
+  processCommerceMessage,
+  withContactOwnerSuggestion,
+  withPlaceOrderSuggestion,
+} = require("./commerce");
 const { preprocessUserMessage } = require("./messagePreprocessor");
+const Company = require("../models/Company");
 const ragClient = require("./ragClient");
 const { findQuestionMedia, mapSourcesWithMedia } = require("./sourceMedia");
 const { assertTokenAllowance } = require("./tokenUsage");
+const { customerFacingAnswer, unknownAnswer } = require("./customerResponse");
 
 async function processCustomerMessage({ companyId, sessionId, channel, text, customer }) {
   const commerce = await processCommerceMessage({
@@ -25,15 +32,18 @@ async function processCustomerMessage({ companyId, sessionId, channel, text, cus
 
   const { conversation, language } = commerce;
   await assertTokenAllowance(companyId);
-  const preprocessed = await preprocessUserMessage(text, {
-    responseLanguage: language,
-    companyId: String(companyId),
-  });
+  const preprocessed = commerce.understanding
+    ? { type: "support", question: commerce.normalizedMessage || text }
+    : await preprocessUserMessage(text, {
+      responseLanguage: language,
+      companyId: String(companyId),
+    });
   if (preprocessed.type === "small_talk") {
-    conversation.messages.push({ role: "assistant", content: preprocessed.reply });
+    const reply = customerFacingAnswer(preprocessed.reply);
+    conversation.messages.push({ role: "assistant", content: reply });
     await conversation.save();
     return {
-      answer: preprocessed.reply,
+      answer: reply,
       sources: [],
       conversation,
       language,
@@ -67,11 +77,22 @@ async function processCustomerMessage({ companyId, sessionId, channel, text, cus
   const { sources } = mapped;
   const media = mapped.media.length ? mapped.media : fallbackMedia;
   const ragAnswer = ragResult.answer || "";
-  const answer = ragAnswer || "I could not find an answer for that yet.";
+  const hasGroundedKnowledge = sources.length > 0 || media.length > 0;
+  const rawAnswer = commerce.catalogProduct && !hasGroundedKnowledge
+    ? commercialProductAnswer(commerce.catalogProduct, language)
+    : hasGroundedKnowledge
+      ? ragAnswer
+      : unknownAnswer(await Company.findById(companyId).lean(), language);
+  const answer = customerFacingAnswer(rawAnswer);
+  const suggestions = commerce.catalogProduct
+    ? withPlaceOrderSuggestion(ragResult.suggestions || [], commerce.catalogProduct, language)
+    : sources.length === 0 && media.length === 0
+      ? withContactOwnerSuggestion(ragResult.suggestions || [], language)
+      : (ragResult.suggestions || []);
   ragClient.updateConversationRagContext(conversation, ragResult);
   conversation.messages.push({ role: "assistant", content: answer, sources, media });
   await conversation.save();
-  return { answer, sources, media, conversation, language, suggestions: ragResult.suggestions || [] };
+  return { answer, sources, media, conversation, language, suggestions };
 }
 
 module.exports = { processCustomerMessage };

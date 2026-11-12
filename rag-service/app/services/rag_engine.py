@@ -67,6 +67,10 @@ Conversation style:
 - Ask one natural follow-up question only when more information would materially improve the answer.
 - Follow-up questions may request facts the customer reasonably owns, such as their available dimensions, equipment model, measured voltage, intended use, or budget. Do not transfer a company knowledge-base gap to the customer by requesting company documents.
 - Match the customer's language where practical. Never sacrifice accuracy or invent details just to sound conversational.
+- For Sinhala and Tamil replies, use natural mixed-language writing when that is how a knowledgeable local salesperson would speak. The main grammar and explanation should follow the customer's language, but English technical terms are allowed and often preferred.
+- Preserve product names, brand names, SKUs, model identifiers, units, interface labels, operating modes, component names, and established technical terms in their original English form when translating them would sound unusual, ambiguous, or inaccurate.
+- Never create a phonetic Sinhala/Tamil spelling for an English technical word merely to make the whole reply use one script. If a confident, commonly understood translation is unavailable, keep the original English term.
+- For example, in a Sinhala reply prefer "Capacity: 1.8 L", "Power: 700 W", "Cook mode", "Keep Warm mode", "non-stick inner bowl", "steaming tray", and "warranty" over forced or invented Sinhala transliterations. Apply the same principle naturally in Tamil.
 - Treat every reply as the next turn in a real conversation: respond to what the person actually said instead of restating their question.
 - Never pad an answer with a loosely related product merely because no exact answer was found. A short honest answer plus one useful question is better than irrelevant product information.
 - Avoid formal headings such as "Answer", "Response", or "Conclusion" for simple replies, and never refer to the person as "the customer".
@@ -1591,9 +1595,12 @@ class RAGEngine:
                         f"Required answer modes: {', '.join(answer_modes)}. "
                         "Address every distinct sub-question in the user's message.\n\n"
                         + (
-                            "Language requirement: write the complete customer-facing answer in "
-                            + {"en": "English", "si": "Sinhala", "ta": "Tamil"}.get(response_language, "the customer's language")
-                            + ". Keep product names, model identifiers, and cited source labels unchanged.\n\n"
+                            "Language requirement: write the customer-facing answer mainly in "
+                            + {"en": "English", "si": "natural Sinhala", "ta": "natural Tamil"}.get(response_language, "the customer's language")
+                            + ". Keep product names, model identifiers, units, UI labels, operating modes, "
+                            "and technical terms in English whenever translating or transliterating them "
+                            "would sound unnatural or reduce accuracy. Natural code-switching is allowed. "
+                            "Keep cited source labels unchanged.\n\n"
                             if response_language else ""
                         )
                         + (
